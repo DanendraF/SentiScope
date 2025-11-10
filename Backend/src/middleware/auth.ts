@@ -6,7 +6,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
 export interface AuthRequest extends Request {
   user?: {
-    id: string;
+    userId: string;
     email: string;
   };
 }
@@ -30,7 +30,7 @@ export const authenticateToken = (
 
     const decoded = jwt.verify(token, JWT_SECRET as string) as { userId: string };
     (req as AuthRequest).user = {
-      id: decoded.userId,
+      userId: decoded.userId,
       email: '', // You can fetch this from database if needed
     };
 

@@ -1,14 +1,7 @@
 import { Router } from 'express';
 import authRoutes from './auth.routes';
-import analysisRoutes from './analysis.routes';
-import userRoutes from './user.routes';
 
 const router = Router();
-
-// Route handlers
-router.use('/auth', authRoutes);
-router.use('/analysis', analysisRoutes);
-router.use('/users', userRoutes);
 
 // API info endpoint
 router.get('/', (req, res) => {
@@ -20,8 +13,14 @@ router.get('/', (req, res) => {
       analysis: '/api/analysis',
       users: '/api/users',
     },
+    status: 'online',
   });
 });
+
+// Mount route modules
+router.use('/auth', authRoutes);
+// router.use('/analysis', analysisRoutes); // TODO: Implement
+// router.use('/users', userRoutes); // TODO: Implement
 
 export default router;
 

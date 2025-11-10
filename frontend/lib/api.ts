@@ -4,10 +4,27 @@ interface ApiResponse<T> {
   success: boolean;
   message: string;
   data?: T;
+  errors?: Array<{ field: string; message: string }>;
+}
+
+export interface User {
+  id: string;
+  email: string;
+  name: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  role: string;
+  isActive: boolean;
+  emailVerified: boolean;
+  avatarUrl: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 class ApiClient {
   private baseURL: string;
+  private isRefreshing: boolean = false;
+  private refreshSubscribers: Array<(token: string) => void> = [];
 
   constructor(baseURL: string) {
     this.baseURL = baseURL;
@@ -15,10 +32,11 @@ class ApiClient {
 
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    retry: boolean = true
   ): Promise<ApiResponse<T>> {
     const token = this.getToken();
-    
+
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
       ...options.headers,
@@ -36,13 +54,88 @@ class ApiClient {
 
       const data = await response.json();
 
+      // Handle token expiration
+      if (response.status === 401 && retry && endpoint !== '/auth/refresh') {
+        const newToken = await this.handleTokenRefresh();
+        if (newToken) {
+          // Retry request with new token
+          return this.request<T>(endpoint, options, false);
+        }
+      }
+
       if (!response.ok) {
-        throw new Error(data.message || 'An error occurred');
+        const error: any = new Error(data.message || 'An error occurred');
+        error.errors = data.errors;
+        error.statusCode = response.status;
+        throw error;
       }
 
       return data;
     } catch (error: any) {
+      // If error has errors array from validation, preserve it
+      if (error.errors) {
+        throw error;
+      }
       throw new Error(error.message || 'Network error');
+    }
+  }
+
+  private async handleTokenRefresh(): Promise<string | null> {
+    if (this.isRefreshing) {
+      // Wait for the refresh to complete
+      return new Promise((resolve) => {
+        this.refreshSubscribers.push((token: string) => {
+          resolve(token);
+        });
+      });
+    }
+
+    this.isRefreshing = true;
+
+    try {
+      const refreshToken = this.getRefreshToken();
+      if (!refreshToken) {
+        this.removeToken();
+        return null;
+      }
+
+      const response = await fetch(`${this.baseURL}/auth/refresh`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ refreshToken }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        this.removeToken();
+        return null;
+      }
+
+      const newAccessToken = data.data?.accessToken;
+      const newRefreshToken = data.data?.refreshToken;
+
+      if (newAccessToken) {
+        this.setToken(newAccessToken);
+        if (newRefreshToken) {
+          this.setRefreshToken(newRefreshToken);
+        }
+
+        // Notify all subscribers
+        this.refreshSubscribers.forEach((callback) => callback(newAccessToken));
+        this.refreshSubscribers = [];
+
+        return newAccessToken;
+      }
+
+      return null;
+    } catch (error) {
+      this.removeToken();
+      return null;
+    } finally {
+      this.isRefreshing = false;
     }
   }
 
@@ -51,37 +144,63 @@ class ApiClient {
     return localStorage.getItem('token');
   }
 
+  private getRefreshToken(): string | null {
+    if (typeof window === 'undefined') return null;
+    return localStorage.getItem('refreshToken');
+  }
+
   private setToken(token: string): void {
     if (typeof window === 'undefined') return;
     localStorage.setItem('token', token);
+    // Also set as cookie for middleware
+    document.cookie = `token=${token}; path=/; max-age=${24 * 60 * 60}`; // 24 hours
+  }
+
+  private setRefreshToken(token: string): void {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem('refreshToken', token);
+    // Also set as cookie
+    document.cookie = `refreshToken=${token}; path=/; max-age=${7 * 24 * 60 * 60}`; // 7 days
   }
 
   private removeToken(): void {
     if (typeof window === 'undefined') return;
     localStorage.removeItem('token');
     localStorage.removeItem('refreshToken');
+    localStorage.removeItem('user');
+    // Also remove cookies
+    document.cookie = 'token=; path=/; max-age=0';
+    document.cookie = 'refreshToken=; path=/; max-age=0';
+  }
+
+  public isAuthenticated(): boolean {
+    return !!this.getToken();
   }
 
   // Auth methods
   async register(data: {
     email: string;
     password: string;
-    firstName: string;
-    lastName: string;
+    name?: string;
+    firstName?: string;
+    lastName?: string;
   }) {
     const response = await this.request<{
-      user: any;
-      token: string;
+      user: User;
+      accessToken: string;
       refreshToken: string;
     }>('/auth/register', {
       method: 'POST',
       body: JSON.stringify(data),
     });
 
-    if (response.data?.token) {
-      this.setToken(response.data.token);
+    if (response.data?.accessToken) {
+      this.setToken(response.data.accessToken);
       if (response.data.refreshToken) {
-        localStorage.setItem('refreshToken', response.data.refreshToken);
+        this.setRefreshToken(response.data.refreshToken);
+      }
+      if (response.data.user) {
+        this.setUser(response.data.user);
       }
     }
 
@@ -90,18 +209,21 @@ class ApiClient {
 
   async login(data: { email: string; password: string }) {
     const response = await this.request<{
-      user: any;
-      token: string;
+      user: User;
+      accessToken: string;
       refreshToken: string;
     }>('/auth/login', {
       method: 'POST',
       body: JSON.stringify(data),
     });
 
-    if (response.data?.token) {
-      this.setToken(response.data.token);
+    if (response.data?.accessToken) {
+      this.setToken(response.data.accessToken);
       if (response.data.refreshToken) {
-        localStorage.setItem('refreshToken', response.data.refreshToken);
+        this.setRefreshToken(response.data.refreshToken);
+      }
+      if (response.data.user) {
+        this.setUser(response.data.user);
       }
     }
 
@@ -109,29 +231,64 @@ class ApiClient {
   }
 
   async logout() {
-    const response = await this.request('/auth/logout', {
-      method: 'POST',
+    try {
+      // Try to call backend logout endpoint
+      await this.request('/auth/logout', {
+        method: 'POST',
+      });
+    } catch (error) {
+      // Continue with logout even if request fails
+      // This handles cases where:
+      // - Backend is not available
+      // - Token is expired/invalid
+      // - Network issues
+      console.log('Backend logout failed, continuing with local cleanup');
+    } finally {
+      // Always remove tokens locally
+      this.removeToken();
+    }
+  }
+
+  async getCurrentUser() {
+    const response = await this.request<{ user: User }>('/auth/me', {
+      method: 'GET',
     });
-    this.removeToken();
+
+    if (response.data?.user) {
+      this.setUser(response.data.user);
+    }
+
     return response;
   }
 
-  async refreshToken() {
-    const refreshToken = localStorage.getItem('refreshToken');
-    if (!refreshToken) {
-      throw new Error('No refresh token available');
-    }
-
-    const response = await this.request<{ token: string }>('/auth/refresh', {
+  async changePassword(data: { currentPassword: string; newPassword: string }) {
+    return this.request('/auth/change-password', {
       method: 'POST',
-      body: JSON.stringify({ refreshToken }),
+      body: JSON.stringify(data),
     });
+  }
 
-    if (response.data?.token) {
-      this.setToken(response.data.token);
+  async verifyEmail() {
+    return this.request('/auth/verify-email', {
+      method: 'POST',
+    });
+  }
+
+  // User storage helpers
+  private setUser(user: User): void {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem('user', JSON.stringify(user));
+  }
+
+  public getUser(): User | null {
+    if (typeof window === 'undefined') return null;
+    const userStr = localStorage.getItem('user');
+    if (!userStr) return null;
+    try {
+      return JSON.parse(userStr);
+    } catch {
+      return null;
     }
-
-    return response;
   }
 
   // Generic methods

@@ -26,13 +26,19 @@ export default function LoginPage() {
 
     try {
       const response = await apiClient.login(formData);
-      
+
       if (response.success) {
         toast({
           title: 'Login successful',
           description: 'Welcome back!',
         });
-        router.push('/dashboard');
+
+        // Check if there's a redirect URL from middleware
+        const searchParams = new URLSearchParams(window.location.search);
+        const redirect = searchParams.get('redirect');
+
+        // Redirect to original destination or dashboard
+        router.push(redirect || '/dashboard');
       }
     } catch (error: any) {
       toast({

@@ -38,10 +38,21 @@ export default function RegisterPage() {
       return;
     }
 
-    if (formData.password.length < 6) {
+    if (formData.password.length < 8) {
       toast({
         title: 'Password too short',
-        description: 'Password must be at least 6 characters',
+        description: 'Password must be at least 8 characters',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Validate password strength
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/;
+    if (!passwordRegex.test(formData.password)) {
+      toast({
+        title: 'Weak password',
+        description: 'Password must contain uppercase, lowercase, and number',
         variant: 'destructive',
       });
       return;
