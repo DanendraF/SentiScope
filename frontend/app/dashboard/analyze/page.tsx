@@ -20,27 +20,152 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { apiClient } from '@/lib/api';
+import { useToast } from '@/hooks/use-toast';
+
+interface AnalysisResult {
+  text: string;
+  sentiment: {
+    label: string;
+    score: number;
+  };
+  keywords?: string[];
+}
+
+interface Statistics {
+  total: number;
+  positive: number;
+  negative: number;
+  neutral: number;
+  positivePercentage: number;
+  negativePercentage: number;
+  neutralPercentage: number;
+  averageScore: number;
+}
 
 export default function AnalyzePage() {
+  const { toast } = useToast();
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const [textInput, setTextInput] = useState('');
+  const [datasetKeywords, setDatasetKeywords] = useState('');
+  const [results, setResults] = useState<AnalysisResult[]>([]);
+  const [filteredResults, setFilteredResults] = useState<AnalysisResult[]>([]);
+  const [statistics, setStatistics] = useState<Statistics | null>(null);
+  const [keywordFilter, setKeywordFilter] = useState('');
 
-  const handleAnalyze = () => {
+  const handleAnalyze = async () => {
+    if (!textInput.trim()) {
+      toast({
+        title: 'Error',
+        description: 'Please enter text to analyze',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setIsAnalyzing(true);
-    setTimeout(() => {
-      setIsAnalyzing(false);
+    console.log('🔍 Analyzing text:', textInput);
+
+    try {
+      // Split by newlines for batch analysis
+      const texts = textInput.split('\n').filter(t => t.trim());
+
+      let response: any;
+      if (texts.length === 1) {
+        // Single text analysis
+        response = await apiClient.analyzeText(texts[0], true);
+        console.log('✅ API Response:', response);
+
+        if (response.success && response.data) {
+          setResults([response.data.result]);
+          setFilteredResults([response.data.result]);
+          setStatistics(response.data.statistics);
+        }
+      } else {
+        // Batch analysis
+        response = await apiClient.analyzeBatch(texts, true);
+        console.log('✅ API Response:', response);
+
+        if (response.success && response.data) {
+          setResults(response.data.results);
+          setFilteredResults(response.data.results);
+          setStatistics(response.data.statistics);
+        }
+      }
+
       setShowResults(true);
-    }, 2000);
+      toast({
+        title: 'Success',
+        description: 'Analysis completed successfully',
+      });
+    } catch (error: any) {
+      console.error('❌ Analysis error:', error);
+      toast({
+        title: 'Analysis failed',
+        description: error.message || 'Failed to analyze text',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
-  const reviewsData = [
-    { id: 1, text: 'Great product! Highly recommend it.', sentiment: 'Positive', score: 0.95 },
-    { id: 2, text: 'Not satisfied with the quality.', sentiment: 'Negative', score: 0.82 },
-    { id: 3, text: 'Average experience, nothing special.', sentiment: 'Neutral', score: 0.55 },
-    { id: 4, text: 'Excellent customer service!', sentiment: 'Positive', score: 0.92 },
-    { id: 5, text: 'Delivery was very slow.', sentiment: 'Negative', score: 0.78 },
-  ];
+  const handleLoadDataset = async () => {
+    setIsAnalyzing(true);
+    const keywordsInput = datasetKeywords.trim();
+    const keywords = keywordsInput ? keywordsInput.split(',').map(k => k.trim()).filter(k => k) : undefined;
+
+    console.log('📊 Loading YouTube dataset with keywords:', keywords);
+
+    try {
+      const response: any = await apiClient.analyzeYoutubeComments(50, 0, keywords);
+      console.log('✅ Dataset Response:', response);
+
+      if (response.success && response.data) {
+        setResults(response.data.results);
+        setFilteredResults(response.data.results);
+        setStatistics(response.data.statistics);
+        setShowResults(true);
+
+        const description = keywords
+          ? `Analyzed ${response.data.results.length} YouTube comments containing "${keywords.join(', ')}" with ${response.data.accuracy} accuracy`
+          : `Analyzed ${response.data.results.length} YouTube comments with ${response.data.accuracy} accuracy`;
+
+        toast({
+          title: 'Dataset Loaded',
+          description,
+        });
+      }
+    } catch (error: any) {
+      console.error('❌ Dataset error:', error);
+      toast({
+        title: 'Failed to load dataset',
+        description: error.message || 'Failed to fetch YouTube dataset',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const handleKeywordFilter = (keyword: string) => {
+    setKeywordFilter(keyword);
+
+    if (!keyword.trim()) {
+      setFilteredResults(results);
+      return;
+    }
+
+    const filtered = results.filter(result => {
+      const lowerKeyword = keyword.toLowerCase();
+      const textMatch = result.text.toLowerCase().includes(lowerKeyword);
+      const keywordsMatch = result.keywords?.some(k => k.toLowerCase().includes(lowerKeyword));
+      return textMatch || keywordsMatch;
+    });
+
+    setFilteredResults(filtered);
+  };
 
   return (
     <div className="p-6 space-y-6">
@@ -76,104 +201,114 @@ export default function AnalyzePage() {
                 <Label htmlFor="text-input">Enter text or keywords</Label>
                 <Textarea
                   id="text-input"
-                  placeholder="Type or paste your text here... (e.g., customer reviews, social media posts, feedback)"
+                  placeholder="Type or paste your text here... (e.g., customer reviews, social media posts, feedback)&#10;&#10;💡 Tip: Enter one text per line for batch analysis"
                   className="min-h-[200px]"
                   value={textInput}
                   onChange={(e) => setTextInput(e.target.value)}
                 />
               </div>
-              <Button
-                onClick={handleAnalyze}
-                disabled={isAnalyzing || !textInput}
-                className="bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600"
-              >
-                {isAnalyzing ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Analyzing...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="mr-2 h-4 w-4" />
-                    Analyze Sentiment
-                  </>
-                )}
-              </Button>
+              <div className="flex gap-3">
+                <Button
+                  onClick={handleAnalyze}
+                  disabled={isAnalyzing || !textInput}
+                  className="bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600"
+                >
+                  {isAnalyzing ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Analyzing...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="mr-2 h-4 w-4" />
+                      Analyze Sentiment
+                    </>
+                  )}
+                </Button>
+              </div>
+
+              <div className="border-t pt-4 mt-4">
+                <div className="space-y-2">
+                  <Label htmlFor="dataset-keywords">Or analyze YouTube Dataset by keywords (optional)</Label>
+                  <Input
+                    id="dataset-keywords"
+                    placeholder="Enter keywords separated by commas (e.g., great, amazing, terrible)"
+                    value={datasetKeywords}
+                    onChange={(e) => setDatasetKeywords(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Leave empty to analyze random comments, or enter keywords to filter comments
+                  </p>
+                </div>
+                <Button
+                  onClick={handleLoadDataset}
+                  disabled={isAnalyzing}
+                  variant="outline"
+                  className="border-purple-500 text-purple-600 hover:bg-purple-50 mt-3"
+                >
+                  {isAnalyzing ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Loading Dataset...
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="mr-2 h-4 w-4" />
+                      Load YouTube Dataset
+                    </>
+                  )}
+                </Button>
+              </div>
             </TabsContent>
 
             <TabsContent value="csv" className="space-y-4">
-              <div className="border-2 border-dashed rounded-lg p-12 text-center hover:border-blue-500 transition-colors cursor-pointer">
+              <div className="border-2 border-dashed rounded-lg p-12 text-center hover:border-blue-500 transition-colors">
                 <Upload className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                <p className="text-sm font-medium mb-2">Drop your CSV file here</p>
-                <p className="text-xs text-muted-foreground mb-4">or click to browse</p>
-                <Input type="file" accept=".csv" className="max-w-xs mx-auto" />
+                <p className="text-sm font-medium mb-2">CSV file upload coming soon</p>
+                <p className="text-xs text-muted-foreground mb-4">Feature under development</p>
               </div>
-              <Button
-                onClick={handleAnalyze}
-                disabled={isAnalyzing}
-                className="bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600"
-              >
-                {isAnalyzing ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Processing...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="mr-2 h-4 w-4" />
-                    Analyze CSV
-                  </>
-                )}
-              </Button>
             </TabsContent>
 
             <TabsContent value="image" className="space-y-4">
-              <div className="border-2 border-dashed rounded-lg p-12 text-center hover:border-blue-500 transition-colors cursor-pointer">
+              <div className="border-2 border-dashed rounded-lg p-12 text-center hover:border-blue-500 transition-colors">
                 <ImageIcon className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                <p className="text-sm font-medium mb-2">Drop your image here</p>
-                <p className="text-xs text-muted-foreground mb-4">PNG, JPG, or JPEG (max 10MB)</p>
-                <Input type="file" accept="image/*" className="max-w-xs mx-auto" />
+                <p className="text-sm font-medium mb-2">Image OCR analysis coming soon</p>
+                <p className="text-xs text-muted-foreground mb-4">Feature under development</p>
               </div>
-              <Button
-                onClick={handleAnalyze}
-                disabled={isAnalyzing}
-                className="bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600"
-              >
-                {isAnalyzing ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Processing...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="mr-2 h-4 w-4" />
-                    Analyze Image
-                  </>
-                )}
-              </Button>
             </TabsContent>
           </Tabs>
         </CardContent>
       </Card>
 
-      {showResults && (
+      {showResults && statistics && (
         <div className="space-y-6 animate-in fade-in duration-500">
-          <div className="flex justify-between items-center">
+          <div className="flex justify-between items-center gap-4">
             <h2 className="text-2xl font-bold">Analysis Results</h2>
-            <Button variant="outline">
-              <Download className="mr-2 h-4 w-4" />
-              Download PDF Report
-            </Button>
+            <div className="flex gap-2 items-center">
+              <Input
+                placeholder="Filter by keyword..."
+                value={keywordFilter}
+                onChange={(e) => handleKeywordFilter(e.target.value)}
+                className="w-64"
+              />
+              <Button variant="outline">
+                <Download className="mr-2 h-4 w-4" />
+                Download PDF Report
+              </Button>
+            </div>
           </div>
 
+          {/* Real Data - Sentiment Summary Cards */}
           <div className="grid gap-4 md:grid-cols-3">
             <Card className="border-2 border-green-500/20 bg-green-50/50 dark:bg-green-950/20">
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm font-medium text-muted-foreground">😊 Positive</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-3xl font-bold text-green-600">67.8%</div>
-                <p className="text-xs text-muted-foreground mt-1">678 mentions</p>
+                <div className="text-3xl font-bold text-green-600">
+                  {statistics.positivePercentage.toFixed(1)}%
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">{statistics.positive} mentions</p>
               </CardContent>
             </Card>
 
@@ -182,8 +317,10 @@ export default function AnalyzePage() {
                 <CardTitle className="text-sm font-medium text-muted-foreground">😠 Negative</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-3xl font-bold text-red-600">18.3%</div>
-                <p className="text-xs text-muted-foreground mt-1">183 mentions</p>
+                <div className="text-3xl font-bold text-red-600">
+                  {statistics.negativePercentage.toFixed(1)}%
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">{statistics.negative} mentions</p>
               </CardContent>
             </Card>
 
@@ -192,12 +329,15 @@ export default function AnalyzePage() {
                 <CardTitle className="text-sm font-medium text-muted-foreground">😐 Neutral</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-3xl font-bold text-gray-600">13.9%</div>
-                <p className="text-xs text-muted-foreground mt-1">139 mentions</p>
+                <div className="text-3xl font-bold text-gray-600">
+                  {statistics.neutralPercentage.toFixed(1)}%
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">{statistics.neutral} mentions</p>
               </CardContent>
             </Card>
           </div>
 
+          {/* Real Data - Charts */}
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             <Card>
               <CardHeader>
@@ -205,7 +345,11 @@ export default function AnalyzePage() {
                 <CardDescription>Overall sentiment breakdown</CardDescription>
               </CardHeader>
               <CardContent>
-                <SentimentPieChart />
+                <SentimentPieChart
+                  positive={statistics.positive}
+                  negative={statistics.negative}
+                  neutral={statistics.neutral}
+                />
               </CardContent>
             </Card>
 
@@ -215,21 +359,23 @@ export default function AnalyzePage() {
                 <CardDescription>Sentiment changes over time</CardDescription>
               </CardHeader>
               <CardContent>
-                <SentimentTrendChart />
+                <SentimentTrendChart results={results} />
               </CardContent>
             </Card>
           </div>
 
+          {/* Real Data - Keyword Analysis */}
           <Card>
             <CardHeader>
               <CardTitle>Keyword Analysis</CardTitle>
               <CardDescription>Sentiment by key topics</CardDescription>
             </CardHeader>
             <CardContent>
-              <KeywordBarChart />
+              <KeywordBarChart results={results} />
             </CardContent>
           </Card>
 
+          {/* Dummy Data - Likert Scale */}
           <Card>
             <CardHeader>
               <CardTitle>Emotional Sentiment - Likert Scale</CardTitle>
@@ -294,6 +440,7 @@ export default function AnalyzePage() {
             </CardContent>
           </Card>
 
+          {/* Dummy Data - AI Summary */}
           <Card>
             <CardHeader>
               <CardTitle>AI Summary</CardTitle>
@@ -302,59 +449,89 @@ export default function AnalyzePage() {
             <CardContent className="space-y-3">
               <div className="p-4 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-900">
                 <p className="text-sm">
-                  Overall sentiment is <span className="font-bold text-green-600">strongly positive</span> with
-                  67.8% positive mentions. The main drivers of positive sentiment are <span className="font-semibold">quality</span> and
-                  <span className="font-semibold"> customer service</span>.
+                  Overall sentiment is <span className="font-bold text-green-600">
+                    {statistics.positivePercentage > 50 ? 'strongly positive' : statistics.negativePercentage > 50 ? 'strongly negative' : 'mixed'}
+                  </span> with {statistics.positivePercentage.toFixed(1)}% positive mentions.
+                  The analysis is based on real-time AI sentiment detection from HuggingFace.
                 </p>
               </div>
               <div className="p-4 bg-yellow-50 dark:bg-yellow-950/30 rounded-lg border border-yellow-200 dark:border-yellow-900">
                 <p className="text-sm">
-                  Areas of concern include <span className="font-semibold">delivery times</span> and <span className="font-semibold">pricing</span>,
-                  which account for most negative feedback.
+                  Analyzed <span className="font-semibold">{statistics.total} text(s)</span> with
+                  an average confidence score of <span className="font-semibold">{(statistics.averageScore * 100).toFixed(1)}%</span>.
                 </p>
               </div>
               <div className="p-4 bg-green-50 dark:bg-green-950/30 rounded-lg border border-green-200 dark:border-green-900">
                 <p className="text-sm">
-                  Positive sentiment is trending upward, with a <span className="font-bold">5.2% improvement</span> over
-                  the previous period.
+                  The sentiment analysis uses advanced multilingual AI model capable of detecting
+                  sentiment in <span className="font-bold">multiple languages</span> including English, Indonesian, and more.
                 </p>
               </div>
             </CardContent>
           </Card>
 
+          {/* Real Data - Detailed Reviews Table */}
           <Card>
             <CardHeader>
               <CardTitle>Detailed Reviews</CardTitle>
-              <CardDescription>Individual sentiment analysis</CardDescription>
+              <CardDescription>
+                Individual sentiment analysis ({filteredResults.length} of {results.length} items
+                {keywordFilter && ` - filtered by: "${keywordFilter}"`})
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-12">#</TableHead>
                     <TableHead>Text</TableHead>
                     <TableHead>Sentiment</TableHead>
+                    <TableHead>Keywords</TableHead>
                     <TableHead className="text-right">Confidence</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {reviewsData.map((review) => (
-                    <TableRow key={review.id}>
-                      <TableCell className="font-medium">{review.text}</TableCell>
+                  {filteredResults.map((result, index) => (
+                    <TableRow key={index}>
+                      <TableCell className="font-mono text-sm text-muted-foreground">
+                        {index + 1}
+                      </TableCell>
+                      <TableCell className="font-medium max-w-md">
+                        {result.text}
+                      </TableCell>
                       <TableCell>
                         <span
-                          className={`px-2 py-1 rounded-full text-xs ${
-                            review.sentiment === 'Positive'
+                          className={`px-2 py-1 rounded-full text-xs font-medium ${
+                            result.sentiment.label === 'positive'
                               ? 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400'
-                              : review.sentiment === 'Negative'
+                              : result.sentiment.label === 'negative'
                               ? 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400'
                               : 'bg-gray-100 text-gray-700 dark:bg-gray-950 dark:text-gray-400'
                           }`}
                         >
-                          {review.sentiment === 'Positive' ? '😊 ' : review.sentiment === 'Negative' ? '😠 ' : '😐 '}
-                          {review.sentiment}
+                          {result.sentiment.label === 'positive' ? '😊 ' : result.sentiment.label === 'negative' ? '😠 ' : '😐 '}
+                          {result.sentiment.label.charAt(0).toUpperCase() + result.sentiment.label.slice(1)}
                         </span>
                       </TableCell>
-                      <TableCell className="text-right">{(review.score * 100).toFixed(0)}%</TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap gap-1">
+                          {result.keywords && result.keywords.length > 0 ? (
+                            result.keywords.slice(0, 5).map((keyword, i) => (
+                              <span
+                                key={i}
+                                className="px-2 py-0.5 bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-400 rounded text-xs"
+                              >
+                                {keyword}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-xs text-muted-foreground">-</span>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right font-mono">
+                        {(result.sentiment.score * 100).toFixed(1)}%
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

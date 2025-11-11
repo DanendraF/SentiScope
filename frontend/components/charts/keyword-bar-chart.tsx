@@ -2,15 +2,51 @@
 
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
-const data = [
-  { keyword: 'Quality', positive: 85, negative: 15 },
-  { keyword: 'Service', positive: 70, negative: 30 },
-  { keyword: 'Price', positive: 60, negative: 40 },
-  { keyword: 'Delivery', positive: 75, negative: 25 },
-  { keyword: 'Support', positive: 80, negative: 20 },
-];
+interface AnalysisResult {
+  text: string;
+  sentiment: {
+    label: string;
+    score: number;
+  };
+}
 
-export function KeywordBarChart() {
+interface KeywordBarChartProps {
+  results: AnalysisResult[];
+}
+
+export function KeywordBarChart({ results }: KeywordBarChartProps) {
+  // Extract top keywords/words from texts and count sentiments
+  const wordSentiments = new Map<string, { positive: number; negative: number; neutral: number }>();
+
+  results.forEach(result => {
+    // Extract words (longer than 3 characters, alphanumeric only)
+    const words = result.text.toLowerCase()
+      .split(/\s+/)
+      .filter(word => word.length > 3 && /^[a-z0-9]+$/.test(word));
+
+    words.forEach(word => {
+      if (!wordSentiments.has(word)) {
+        wordSentiments.set(word, { positive: 0, negative: 0, neutral: 0 });
+      }
+      const counts = wordSentiments.get(word)!;
+      if (result.sentiment.label === 'positive') counts.positive++;
+      else if (result.sentiment.label === 'negative') counts.negative++;
+      else counts.neutral++;
+    });
+  });
+
+  // Sort by total mentions and take top 5
+  const data = Array.from(wordSentiments.entries())
+    .map(([word, counts]) => ({
+      keyword: word,
+      positive: counts.positive,
+      negative: counts.negative,
+      neutral: counts.neutral,
+      total: counts.positive + counts.negative + counts.neutral,
+    }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 5);
+
   return (
     <ResponsiveContainer width="100%" height={300}>
       <BarChart data={data}>
@@ -21,6 +57,7 @@ export function KeywordBarChart() {
         <Legend />
         <Bar dataKey="positive" fill="#10b981" />
         <Bar dataKey="negative" fill="#ef4444" />
+        <Bar dataKey="neutral" fill="#6b7280" />
       </BarChart>
     </ResponsiveContainer>
   );

@@ -1,6 +1,6 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import pool from '../config/database';
+import { supabase } from '../config/database';
 import { AppError } from '../utils/AppError';
 
 interface RegisterData {
@@ -61,13 +61,14 @@ export class AuthService {
     const { email, password, name, firstName, lastName } = data;
 
     // Check if user already exists
-    const existingUserQuery = `
-      SELECT id FROM users
-      WHERE email = $1 AND deleted_at IS NULL
-    `;
-    const existingUser = await pool.query(existingUserQuery, [email.toLowerCase()]);
+    const { data: existingUser, error: checkError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('email', email.toLowerCase())
+      .is('deleted_at', null)
+      .single();
 
-    if (existingUser.rows.length > 0) {
+    if (existingUser) {
       throw new AppError('Email already registered', 400);
     }
 
@@ -84,41 +85,27 @@ export class AuthService {
     }
 
     // Insert new user
-    const insertQuery = `
-      INSERT INTO users (
-        email,
-        password_hash,
-        name,
-        first_name,
-        last_name,
-        role,
-        is_active,
-        email_verified
-      )
-      VALUES ($1, $2, $3, $4, $5, 'user', true, false)
-      RETURNING
-        id,
-        email,
-        name,
-        first_name,
-        last_name,
-        role,
-        is_active,
-        email_verified,
-        avatar_url,
-        created_at,
-        updated_at
-    `;
+    const { data: newUser, error: insertError } = await supabase
+      .from('users')
+      .insert({
+        email: email.toLowerCase(),
+        password_hash: passwordHash,
+        name: fullName || null,
+        first_name: firstName || null,
+        last_name: lastName || null,
+        role: 'user',
+        is_active: true,
+        email_verified: false,
+      })
+      .select()
+      .single();
 
-    const result = await pool.query(insertQuery, [
-      email.toLowerCase(),
-      passwordHash,
-      fullName || null,
-      firstName || null,
-      lastName || null,
-    ]);
+    if (insertError || !newUser) {
+      console.error('Error registering user:', insertError);
+      throw new AppError('Failed to register user', 500);
+    }
 
-    const user = this.mapUserResponse(result.rows[0]);
+    const user = this.mapUserResponse(newUser);
 
     // Generate tokens
     const tokens = this.generateTokens({
@@ -140,31 +127,16 @@ export class AuthService {
     const { email, password } = data;
 
     // Find user
-    const query = `
-      SELECT
-        id,
-        email,
-        password_hash,
-        name,
-        first_name,
-        last_name,
-        role,
-        is_active,
-        email_verified,
-        avatar_url,
-        created_at,
-        updated_at
-      FROM users
-      WHERE email = $1 AND deleted_at IS NULL
-    `;
+    const { data: userRow, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', email.toLowerCase())
+      .is('deleted_at', null)
+      .single();
 
-    const result = await pool.query(query, [email.toLowerCase()]);
-
-    if (result.rows.length === 0) {
+    if (error || !userRow) {
       throw new AppError('Invalid email or password', 401);
     }
-
-    const userRow = result.rows[0];
 
     // Check if user is active
     if (!userRow.is_active) {
@@ -204,18 +176,16 @@ export class AuthService {
       const decoded = jwt.verify(refreshToken, this.JWT_REFRESH_SECRET) as JWTPayload;
 
       // Check if user still exists and is active
-      const query = `
-        SELECT id, email, role, is_active
-        FROM users
-        WHERE id = $1 AND deleted_at IS NULL
-      `;
-      const result = await pool.query(query, [decoded.userId]);
+      const { data: user, error } = await supabase
+        .from('users')
+        .select('id, email, role, is_active')
+        .eq('id', decoded.userId)
+        .is('deleted_at', null)
+        .single();
 
-      if (result.rows.length === 0) {
+      if (error || !user) {
         throw new AppError('User not found', 404);
       }
-
-      const user = result.rows[0];
 
       if (!user.is_active) {
         throw new AppError('Account is deactivated', 403);
@@ -243,61 +213,45 @@ export class AuthService {
   async logout(userId: string): Promise<void> {
     // Update last_login_at to current time as a logout marker
     // In a production app, you might want to implement a token blacklist
-    const query = `
-      UPDATE users
-      SET updated_at = CURRENT_TIMESTAMP
-      WHERE id = $1
-    `;
-    await pool.query(query, [userId]);
+    await supabase
+      .from('users')
+      .update({ updated_at: new Date().toISOString() })
+      .eq('id', userId);
   }
 
   /**
    * Get user profile by ID
    */
   async getUserById(userId: string): Promise<UserResponse> {
-    const query = `
-      SELECT
-        id,
-        email,
-        name,
-        first_name,
-        last_name,
-        role,
-        is_active,
-        email_verified,
-        avatar_url,
-        last_login_at,
-        created_at,
-        updated_at
-      FROM users
-      WHERE id = $1 AND deleted_at IS NULL
-    `;
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('id, email, name, first_name, last_name, role, is_active, email_verified, avatar_url, last_login_at, created_at, updated_at')
+      .eq('id', userId)
+      .is('deleted_at', null)
+      .single();
 
-    const result = await pool.query(query, [userId]);
-
-    if (result.rows.length === 0) {
+    if (error || !user) {
       throw new AppError('User not found', 404);
     }
 
-    return this.mapUserResponse(result.rows[0]);
+    return this.mapUserResponse(user);
   }
 
   /**
    * Verify email (placeholder for email verification flow)
    */
   async verifyEmail(userId: string): Promise<void> {
-    const query = `
-      UPDATE users
-      SET
-        email_verified = true,
-        email_verified_at = CURRENT_TIMESTAMP,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = $1 AND deleted_at IS NULL
-    `;
+    const { error } = await supabase
+      .from('users')
+      .update({
+        email_verified: true,
+        email_verified_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', userId)
+      .is('deleted_at', null);
 
-    const result = await pool.query(query, [userId]);
-
-    if (result.rowCount === 0) {
+    if (error) {
       throw new AppError('User not found', 404);
     }
   }
@@ -307,19 +261,19 @@ export class AuthService {
    */
   async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<void> {
     // Get current password hash
-    const query = `
-      SELECT password_hash
-      FROM users
-      WHERE id = $1 AND deleted_at IS NULL
-    `;
-    const result = await pool.query(query, [userId]);
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('password_hash')
+      .eq('id', userId)
+      .is('deleted_at', null)
+      .single();
 
-    if (result.rows.length === 0) {
+    if (error || !user) {
       throw new AppError('User not found', 404);
     }
 
     // Verify current password
-    const isPasswordValid = await bcrypt.compare(currentPassword, result.rows[0].password_hash);
+    const isPasswordValid = await bcrypt.compare(currentPassword, user.password_hash);
 
     if (!isPasswordValid) {
       throw new AppError('Current password is incorrect', 401);
@@ -330,14 +284,13 @@ export class AuthService {
     const newPasswordHash = await bcrypt.hash(newPassword, saltRounds);
 
     // Update password
-    const updateQuery = `
-      UPDATE users
-      SET
-        password_hash = $1,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = $2
-    `;
-    await pool.query(updateQuery, [newPasswordHash, userId]);
+    await supabase
+      .from('users')
+      .update({
+        password_hash: newPasswordHash,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', userId);
   }
 
   /**
@@ -359,12 +312,10 @@ export class AuthService {
    * Update last login timestamp
    */
   private async updateLastLogin(userId: string): Promise<void> {
-    const query = `
-      UPDATE users
-      SET last_login_at = CURRENT_TIMESTAMP
-      WHERE id = $1
-    `;
-    await pool.query(query, [userId]);
+    await supabase
+      .from('users')
+      .update({ last_login_at: new Date().toISOString() })
+      .eq('id', userId);
   }
 
   /**

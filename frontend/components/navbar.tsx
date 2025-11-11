@@ -116,6 +116,10 @@ export function Navbar() {
                     </div>
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => router.push('/analysis')}>
+                    <BarChart3 className="mr-2 h-4 w-4" />
+                    Analysis
+                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => router.push('/dashboard')}>
                     <LayoutDashboard className="mr-2 h-4 w-4" />
                     Dashboard

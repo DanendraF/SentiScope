@@ -2,13 +2,19 @@
 
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
 
-const data = [
-  { name: 'Positive', value: 678, color: '#10b981' },
-  { name: 'Negative', value: 183, color: '#ef4444' },
-  { name: 'Neutral', value: 139, color: '#6b7280' },
-];
+interface SentimentPieChartProps {
+  positive: number;
+  negative: number;
+  neutral: number;
+}
 
-export function SentimentPieChart() {
+export function SentimentPieChart({ positive, negative, neutral }: SentimentPieChartProps) {
+  const data = [
+    { name: 'Positive', value: positive, color: '#10b981' },
+    { name: 'Negative', value: negative, color: '#ef4444' },
+    { name: 'Neutral', value: neutral, color: '#6b7280' },
+  ];
+
   return (
     <ResponsiveContainer width="100%" height={300}>
       <PieChart>

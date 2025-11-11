@@ -313,6 +313,54 @@ class ApiClient {
   async delete<T>(endpoint: string): Promise<ApiResponse<T>> {
     return this.request<T>(endpoint, { method: 'DELETE' });
   }
+
+  // Analysis methods
+  async analyzeText(text: string, saveToDatabase?: boolean, title?: string) {
+    return this.post('/analysis/text', { text, saveToDatabase, title });
+  }
+
+  async analyzeBatch(texts: string[], saveToDatabase?: boolean, title?: string) {
+    return this.post('/analysis/batch', { texts, saveToDatabase, title });
+  }
+
+  async analyzeKeywords(keywords: string[], saveToDatabase?: boolean, title?: string) {
+    return this.post('/analysis/keywords', { keywords, saveToDatabase, title });
+  }
+
+  async getAnalysisHistory(limit?: number, offset?: number) {
+    const params = new URLSearchParams();
+    if (limit) params.append('limit', limit.toString());
+    if (offset) params.append('offset', offset.toString());
+    return this.get(`/analysis/history?${params.toString()}`);
+  }
+
+  async getAnalysisById(id: string) {
+    return this.get(`/analysis/${id}`);
+  }
+
+  async deleteAnalysis(id: string) {
+    return this.delete(`/analysis/${id}`);
+  }
+
+  // Dataset methods
+  async fetchYoutubeComments(limit?: number, offset?: number) {
+    const params = new URLSearchParams();
+    if (limit) params.append('limit', limit.toString());
+    if (offset) params.append('offset', offset.toString());
+    return this.get(`/datasets/youtube-comments?${params.toString()}`);
+  }
+
+  async analyzeYoutubeComments(limit?: number, offset?: number, keywords?: string | string[]) {
+    return this.post('/datasets/youtube-comments/analyze', { limit, offset, keywords });
+  }
+
+  async fetchDataset(datasetName: string, config?: string, split?: string, limit?: number, offset?: number) {
+    return this.post('/datasets/fetch', { datasetName, config, split, limit, offset });
+  }
+
+  async getDatasetInfo(datasetName: string) {
+    return this.get(`/datasets/info/${datasetName}`);
+  }
 }
 
 export const apiClient = new ApiClient(API_URL);

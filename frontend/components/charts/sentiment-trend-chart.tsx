@@ -2,22 +2,40 @@
 
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
-const data = [
-  { date: 'Jan 1', positive: 65, negative: 20, neutral: 15 },
-  { date: 'Jan 5', positive: 68, negative: 18, neutral: 14 },
-  { date: 'Jan 10', positive: 70, negative: 17, neutral: 13 },
-  { date: 'Jan 15', positive: 67, negative: 19, neutral: 14 },
-  { date: 'Jan 20', positive: 72, negative: 16, neutral: 12 },
-  { date: 'Jan 25', positive: 75, negative: 15, neutral: 10 },
-  { date: 'Jan 30', positive: 68, negative: 18, neutral: 14 },
-];
+interface AnalysisResult {
+  text: string;
+  sentiment: {
+    label: string;
+    score: number;
+  };
+}
 
-export function SentimentTrendChart() {
+interface SentimentTrendChartProps {
+  results: AnalysisResult[];
+}
+
+export function SentimentTrendChart({ results }: SentimentTrendChartProps) {
+  // Create cumulative trend data from results
+  const data = results.map((_, index) => {
+    // Count sentiments up to current index
+    const upToHere = results.slice(0, index + 1);
+    const positive = upToHere.filter(r => r.sentiment.label === 'positive').length;
+    const negative = upToHere.filter(r => r.sentiment.label === 'negative').length;
+    const neutral = upToHere.filter(r => r.sentiment.label === 'neutral').length;
+
+    return {
+      index: `#${index + 1}`,
+      positive,
+      negative,
+      neutral,
+    };
+  });
+
   return (
     <ResponsiveContainer width="100%" height={300}>
       <LineChart data={data}>
         <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-        <XAxis dataKey="date" className="text-xs" />
+        <XAxis dataKey="index" className="text-xs" />
         <YAxis className="text-xs" />
         <Tooltip />
         <Legend />

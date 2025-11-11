@@ -1,68 +1,58 @@
-import { Pool } from 'pg';
+import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 
 // Load environment variables
 dotenv.config();
 
-// Validate database URL
-if (!process.env.SUPABASE_DB_URL) {
-  console.error('❌ SUPABASE_DB_URL is not defined in environment variables');
+// Validate Supabase credentials
+if (!process.env.SUPABASE_URL) {
+  console.error('❌ SUPABASE_URL is not defined in environment variables');
   process.exit(1);
 }
 
-// Clean the connection string (remove trailing spaces)
-const connectionString = process.env.SUPABASE_DB_URL.trim();
+if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  console.error('❌ SUPABASE_SERVICE_ROLE_KEY is not defined in environment variables');
+  process.exit(1);
+}
 
-console.log('📊 Attempting to connect to database...');
-console.log('🔗 Host:', connectionString.split('@')[1]?.split(':')[0] || 'unknown');
+console.log('📊 Initializing Supabase client...');
+console.log('🔗 URL:', process.env.SUPABASE_URL);
 
-// Database connection pool
-const pool = new Pool({
-  connectionString,
-  ssl: {
-    rejectUnauthorized: false,
-  },
-  max: 20, // Maximum number of clients in the pool
-  idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
-  connectionTimeoutMillis: 10000, // Increased to 10 seconds for remote DB
-});
+// Create Supabase client with SERVICE_ROLE_KEY to bypass RLS
+export const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY,
+  {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  }
+);
 
 // Test connection
-pool.on('connect', () => {
-  console.log('✅ Database connection established successfully');
-});
-
-pool.on('error', (err) => {
-  console.error('❌ Unexpected error on idle client:', err.message);
-  // Don't exit immediately, let the pool try to reconnect
-});
-
-// Test initial connection
 export const testConnection = async () => {
   try {
-    const client = await pool.connect();
-    const result = await client.query('SELECT NOW() as now, current_database() as db, version() as version');
-    console.log('✅ Database connected successfully');
-    console.log('📅 Server time:', result.rows[0].now);
-    console.log('🗄️  Database:', result.rows[0].db);
-    console.log('📦 PostgreSQL version:', result.rows[0].version.split(' ')[0] + ' ' + result.rows[0].version.split(' ')[1]);
-    client.release();
+    // Test query to check connection
+    const { data, error } = await supabase
+      .from('users')
+      .select('count')
+      .limit(1);
+
+    if (error) {
+      console.error('❌ Database connection failed:');
+      console.error('   Error:', error.message);
+      console.error('   Code:', error.code);
+      return false;
+    }
+
+    console.log('✅ Database connected successfully via Supabase');
     return true;
   } catch (error: any) {
     console.error('❌ Database connection failed:');
     console.error('   Error:', error.message);
-    console.error('   Code:', error.code);
-    if (error.code === 'ECONNREFUSED') {
-      console.error('   💡 Tip: Check if database server is running and accessible');
-      console.error('   💡 Tip: Verify SUPABASE_DB_URL in .env file');
-    } else if (error.code === '28P01') {
-      console.error('   💡 Tip: Check database password in SUPABASE_DB_URL');
-    } else if (error.code === '3D000') {
-      console.error('   💡 Tip: Database does not exist');
-    }
     return false;
   }
 };
 
-export default pool;
-
+export default supabase;
