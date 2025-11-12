@@ -2,7 +2,11 @@ import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import { sentimentService } from '../services/sentiment.service';
 import { analysisDatabaseService } from '../services/analysis.database.service';
+import { storageService } from '../services/storage.service';
 import { AppError } from '../utils/AppError';
+import Papa from 'papaparse';
+import fs from 'fs';
+import Tesseract from 'tesseract.js';
 
 /**
  * Analyze single text
@@ -299,6 +303,363 @@ export const deleteAnalysis = async (
       message: 'Analysis deleted successfully',
     });
   } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Analyze CSV file
+ * POST /api/analysis/csv
+ */
+export const analyzeCsvFile = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.user?.userId;
+
+    if (!userId) {
+      throw new AppError('Unauthorized', 401);
+    }
+
+    if (!req.file) {
+      throw new AppError('CSV file is required', 400);
+    }
+
+    const { saveToDatabase = false, title, textColumn = 'text' } = req.body;
+
+    // Read and parse CSV file
+    const fileContent = fs.readFileSync(req.file.path, 'utf-8');
+
+    const parseResult = Papa.parse<Record<string, any>>(fileContent, {
+      header: true,
+      skipEmptyLines: true,
+      dynamicTyping: false,
+      quoteChar: '"',
+      escapeChar: '"',
+      delimitersToGuess: [',', '\t', '|', ';'],
+      transform: (value: string) => {
+        // Clean up any problematic quotes
+        return value.replace(/^["']|["']$/g, '').trim();
+      },
+    });
+
+    // Filter out critical errors only (ignore minor quote warnings)
+    const criticalErrors = (parseResult.errors || []).filter(
+      (error: any) => error.type === 'FieldMismatch' || error.type === 'Delimiter'
+    );
+
+    if (criticalErrors.length > 0) {
+      // Clean up uploaded file
+      fs.unlinkSync(req.file.path);
+      throw new AppError(`CSV parsing error: ${criticalErrors[0].message}`, 400);
+    }
+
+    // Log warnings if any (but don't fail)
+    if (parseResult.errors && parseResult.errors.length > 0) {
+      console.warn(`⚠️ CSV parsing warnings (${parseResult.errors.length}):`,
+        parseResult.errors.slice(0, 3).map((e: any) => e.message)
+      );
+    }
+
+    const rows = parseResult.data as Record<string, any>[];
+
+    if (rows.length === 0) {
+      // Clean up uploaded file
+      fs.unlinkSync(req.file.path);
+      throw new AppError('CSV file is empty', 400);
+    }
+
+    // Get available columns
+    const columns = Object.keys(rows[0]);
+
+    // Find text column with smart detection
+    let selectedColumn = textColumn;
+
+    if (!columns.includes(textColumn)) {
+      // Try common column names (including plural variations)
+      const commonNames = [
+        'text', 'texts',
+        'comment', 'comments',
+        'review', 'reviews',
+        'content', 'contents',
+        'message', 'messages',
+        'description', 'descriptions',
+        'feedback', 'feedbacks',
+        'opinion', 'opinions',
+        'sentence', 'sentences',
+      ];
+
+      // Try exact match first
+      let foundColumn = commonNames.find(name => columns.includes(name));
+
+      // If no exact match, try case-insensitive match
+      if (!foundColumn) {
+        foundColumn = columns.find(col =>
+          commonNames.some(name => col.toLowerCase() === name.toLowerCase())
+        );
+      }
+
+      // If still no match, try partial match (e.g., "user_comment" contains "comment")
+      if (!foundColumn) {
+        foundColumn = columns.find(col => {
+          const lowerCol = col.toLowerCase();
+          return commonNames.some(name => lowerCol.includes(name.toLowerCase()));
+        });
+      }
+
+      if (foundColumn) {
+        selectedColumn = foundColumn;
+      } else {
+        // Use first column if no match found
+        selectedColumn = columns[0];
+      }
+    }
+
+    console.log(`📊 CSV columns found:`, columns);
+    console.log(`📝 Using column: "${selectedColumn}" for text extraction`);
+
+    // Extract texts from selected column
+    const texts = rows
+      .map(row => row[selectedColumn])
+      .filter(text => text && typeof text === 'string' && text.trim().length > 0)
+      .map(text => String(text).trim());
+
+    if (texts.length === 0) {
+      // Clean up uploaded file
+      fs.unlinkSync(req.file.path);
+      throw new AppError(`No valid text found in column "${selectedColumn}"`, 400);
+    }
+
+    // Limit to 500 texts for performance
+    const textsToAnalyze = texts.slice(0, 500);
+
+    if (texts.length > 500) {
+      console.log(`⚠️ CSV has ${texts.length} rows, limiting to 500 for analysis`);
+    }
+
+    console.log(`🔍 Analyzing ${textsToAnalyze.length} texts from CSV...`);
+
+    // Analyze texts in batches of 100 (API limit)
+    const BATCH_SIZE = 100;
+    const allResults: any[] = [];
+
+    for (let i = 0; i < textsToAnalyze.length; i += BATCH_SIZE) {
+      const batch = textsToAnalyze.slice(i, i + BATCH_SIZE);
+      const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+      const totalBatches = Math.ceil(textsToAnalyze.length / BATCH_SIZE);
+
+      console.log(`📦 Processing batch ${batchNum}/${totalBatches} (${batch.length} texts)...`);
+
+      const batchResults = await sentimentService.analyzeBatchTexts(batch);
+      allResults.push(...batchResults);
+
+      // Small delay between batches to avoid rate limiting
+      if (i + BATCH_SIZE < textsToAnalyze.length) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+
+    const results = allResults;
+    const statistics = sentimentService.getSentimentStatistics(results);
+
+    // Upload file to Supabase Storage
+    let filePath: string | undefined;
+    let fileUrl: string | undefined;
+
+    try {
+      const uploadResult = await storageService.uploadFile(
+        req.file.path,
+        req.file.originalname,
+        userId,
+        'csv'
+      );
+
+      if (uploadResult) {
+        filePath = uploadResult.path;
+        fileUrl = uploadResult.url;
+        console.log(`✅ CSV file uploaded to storage: ${filePath}`);
+      } else {
+        console.warn('⚠️ Failed to upload CSV file to storage, continuing without file storage');
+      }
+    } catch (uploadError: any) {
+      console.error('❌ Failed to upload file to storage:', uploadError.message);
+      console.warn('⚠️ Continuing without file storage');
+    }
+
+    // Save to database if requested
+    let savedAnalysis = null;
+    if (saveToDatabase) {
+      const analysisTitle = title || `CSV Analysis - ${req.file.originalname}`;
+      savedAnalysis = await analysisDatabaseService.saveAnalysis(
+        userId,
+        analysisTitle,
+        'csv',
+        results,
+        filePath,
+        fileUrl,
+        req.file.originalname
+      );
+    }
+
+    // Clean up uploaded file
+    fs.unlinkSync(req.file.path);
+
+    res.status(200).json({
+      success: true,
+      message: `Analyzed ${results.length} texts from CSV successfully`,
+      data: {
+        fileName: req.file.originalname,
+        totalRows: rows.length,
+        analyzedRows: results.length,
+        columnUsed: selectedColumn,
+        availableColumns: columns,
+        results,
+        statistics,
+        ...(savedAnalysis && { analysis: savedAnalysis }),
+      },
+    });
+  } catch (error) {
+    // Clean up uploaded file if exists
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+    next(error);
+  }
+};
+
+/**
+ * Analyze Image file with OCR
+ * POST /api/analysis/image
+ */
+export const analyzeImageFile = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.user?.userId;
+
+    if (!userId) {
+      throw new AppError('Unauthorized', 401);
+    }
+
+    if (!req.file) {
+      throw new AppError('Image file is required', 400);
+    }
+
+    const { saveToDatabase = false, title } = req.body;
+
+    console.log(`🖼️ Processing image: ${req.file.originalname}`);
+
+    // Perform OCR on the image
+    const { data: { text } } = await Tesseract.recognize(
+      req.file.path,
+      'eng',
+      {
+        logger: (m) => {
+          if (m.status === 'recognizing text') {
+            console.log(`📝 OCR Progress: ${(m.progress * 100).toFixed(1)}%`);
+          }
+        },
+      }
+    );
+
+    console.log(`✅ OCR completed. Extracted ${text.length} characters`);
+
+    // Clean extracted text
+    const cleanedText = text
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line.length > 0)
+      .join('\n');
+
+    if (cleanedText.length === 0) {
+      // Clean up uploaded file
+      fs.unlinkSync(req.file.path);
+      throw new AppError('No text found in image', 400);
+    }
+
+    console.log(`📝 Cleaned text (${cleanedText.length} chars):\n${cleanedText.substring(0, 200)}...`);
+
+    // Split text into sentences/lines for analysis
+    const texts = cleanedText
+      .split('\n')
+      .filter(t => t.trim().length > 10) // Filter out very short lines
+      .slice(0, 100); // Limit to 100 lines
+
+    if (texts.length === 0) {
+      // Clean up uploaded file
+      fs.unlinkSync(req.file.path);
+      throw new AppError('No valid text extracted from image', 400);
+    }
+
+    console.log(`🔍 Analyzing ${texts.length} text lines from image...`);
+
+    // Analyze all texts
+    const results = await sentimentService.analyzeBatchTexts(texts);
+    const statistics = sentimentService.getSentimentStatistics(results);
+
+    // Upload file to Supabase Storage
+    let filePath: string | undefined;
+    let fileUrl: string | undefined;
+
+    try {
+      const uploadResult = await storageService.uploadFile(
+        req.file.path,
+        req.file.originalname,
+        userId,
+        'image'
+      );
+
+      if (uploadResult) {
+        filePath = uploadResult.path;
+        fileUrl = uploadResult.url;
+        console.log(`✅ Image file uploaded to storage: ${filePath}`);
+      } else {
+        console.warn('⚠️ Failed to upload image file to storage, continuing without file storage');
+      }
+    } catch (uploadError: any) {
+      console.error('❌ Failed to upload file to storage:', uploadError.message);
+      console.warn('⚠️ Continuing without file storage');
+    }
+
+    // Save to database if requested
+    let savedAnalysis = null;
+    if (saveToDatabase) {
+      const analysisTitle = title || `Image Analysis - ${req.file.originalname}`;
+      savedAnalysis = await analysisDatabaseService.saveAnalysis(
+        userId,
+        analysisTitle,
+        'text', // Use 'text' type since it's extracted text
+        results,
+        filePath,
+        fileUrl,
+        req.file.originalname
+      );
+    }
+
+    // Clean up uploaded file
+    fs.unlinkSync(req.file.path);
+
+    res.status(200).json({
+      success: true,
+      message: `Analyzed ${results.length} text lines from image successfully`,
+      data: {
+        fileName: req.file.originalname,
+        extractedText: cleanedText,
+        analyzedLines: results.length,
+        results,
+        statistics,
+        ...(savedAnalysis && { analysis: savedAnalysis }),
+      },
+    });
+  } catch (error) {
+    // Clean up uploaded file if exists
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
     next(error);
   }
 };

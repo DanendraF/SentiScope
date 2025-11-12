@@ -4,6 +4,8 @@ import {
   analyzeSingleText,
   analyzeBatchTexts,
   analyzeKeywords,
+  analyzeCsvFile,
+  analyzeImageFile,
   getStatistics,
   getAnalysisHistory,
   getAnalysisById,
@@ -11,6 +13,7 @@ import {
 } from '../controllers/analysis.controller';
 import { authenticateToken } from '../middleware/auth';
 import { validate } from '../middleware/validate';
+import { csvUpload, imageUpload } from '../middleware/upload';
 
 const router = Router();
 
@@ -94,6 +97,22 @@ router.post(
   analyzeKeywordsValidation,
   validate,
   analyzeKeywords
+);
+
+// POST /api/analysis/csv - Analyze CSV file
+router.post(
+  '/csv',
+  authenticateToken,
+  csvUpload.single('file'),
+  analyzeCsvFile
+);
+
+// POST /api/analysis/image - Analyze Image file with OCR
+router.post(
+  '/image',
+  authenticateToken,
+  imageUpload.single('file'),
+  analyzeImageFile
 );
 
 // POST /api/analysis/statistics - Get statistics from results

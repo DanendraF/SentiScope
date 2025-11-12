@@ -49,6 +49,9 @@ export default function AnalyzePage() {
   const [showResults, setShowResults] = useState(false);
   const [textInput, setTextInput] = useState('');
   const [datasetKeywords, setDatasetKeywords] = useState('');
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [csvColumn, setCsvColumn] = useState('text');
+  const [imageFile, setImageFile] = useState<File | null>(null);
   const [results, setResults] = useState<AnalysisResult[]>([]);
   const [filteredResults, setFilteredResults] = useState<AnalysisResult[]>([]);
   const [statistics, setStatistics] = useState<Statistics | null>(null);
@@ -142,6 +145,145 @@ export default function AnalyzePage() {
       toast({
         title: 'Failed to load dataset',
         description: error.message || 'Failed to fetch YouTube dataset',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const handleCsvUpload = async () => {
+    if (!csvFile) {
+      toast({
+        title: 'Error',
+        description: 'Please select a CSV file',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsAnalyzing(true);
+    console.log('📁 Uploading CSV:', csvFile.name);
+
+    try {
+      const response: any = await apiClient.analyzeCsv(csvFile, true, undefined, csvColumn);
+      console.log('✅ CSV Response:', response);
+
+      if (response.success && response.data) {
+        setResults(response.data.results);
+        setFilteredResults(response.data.results);
+        setStatistics(response.data.statistics);
+        setShowResults(true);
+
+        toast({
+          title: 'CSV Analyzed Successfully',
+          description: `Analyzed ${response.data.analyzedRows} rows from ${response.data.fileName}`,
+        });
+      }
+    } catch (error: any) {
+      console.error('❌ CSV error:', error);
+      toast({
+        title: 'Failed to analyze CSV',
+        description: error.message || 'Failed to process CSV file',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.type !== 'text/csv' && !file.name.endsWith('.csv')) {
+        toast({
+          title: 'Invalid file type',
+          description: 'Please upload a CSV file',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      if (file.size > 10 * 1024 * 1024) {
+        toast({
+          title: 'File too large',
+          description: 'Maximum file size is 10MB',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      setCsvFile(file);
+      toast({
+        title: 'File selected',
+        description: `${file.name} (${(file.size / 1024).toFixed(2)} KB)`,
+      });
+    }
+  };
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/bmp', 'image/webp'];
+      if (!allowedTypes.includes(file.type)) {
+        toast({
+          title: 'Invalid file type',
+          description: 'Please upload an image file (JPG, PNG, GIF, BMP, WEBP)',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      if (file.size > 10 * 1024 * 1024) {
+        toast({
+          title: 'File too large',
+          description: 'Maximum file size is 10MB',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      setImageFile(file);
+      toast({
+        title: 'Image selected',
+        description: `${file.name} (${(file.size / 1024).toFixed(2)} KB)`,
+      });
+    }
+  };
+
+  const handleImageUpload = async () => {
+    if (!imageFile) {
+      toast({
+        title: 'Error',
+        description: 'Please select an image file',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsAnalyzing(true);
+    console.log('🖼️ Uploading image:', imageFile.name);
+
+    try {
+      const response: any = await apiClient.analyzeImage(imageFile, true);
+      console.log('✅ Image Response:', response);
+
+      if (response.success && response.data) {
+        setResults(response.data.results);
+        setFilteredResults(response.data.results);
+        setStatistics(response.data.statistics);
+        setShowResults(true);
+
+        toast({
+          title: 'Image Analyzed Successfully',
+          description: `Extracted and analyzed ${response.data.analyzedLines} text lines from ${response.data.fileName}`,
+        });
+      }
+    } catch (error: any) {
+      console.error('❌ Image error:', error);
+      toast({
+        title: 'Failed to analyze image',
+        description: error.message || 'Failed to process image file',
         variant: 'destructive',
       });
     } finally {
@@ -262,18 +404,119 @@ export default function AnalyzePage() {
             </TabsContent>
 
             <TabsContent value="csv" className="space-y-4">
-              <div className="border-2 border-dashed rounded-lg p-12 text-center hover:border-blue-500 transition-colors">
-                <Upload className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                <p className="text-sm font-medium mb-2">CSV file upload coming soon</p>
-                <p className="text-xs text-muted-foreground mb-4">Feature under development</p>
+              <div className="space-y-4">
+                <div className="border-2 border-dashed rounded-lg p-8 text-center hover:border-blue-500 transition-colors">
+                  <Upload className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                  <p className="text-sm font-medium mb-2">Upload CSV File</p>
+                  <p className="text-xs text-muted-foreground mb-4">
+                    CSV file should contain a column with text data (max 10MB)
+                  </p>
+                  <input
+                    type="file"
+                    accept=".csv"
+                    onChange={handleFileChange}
+                    className="hidden"
+                    id="csv-upload"
+                  />
+                  <label htmlFor="csv-upload">
+                    <Button variant="outline" className="cursor-pointer" asChild>
+                      <span>
+                        <FileText className="mr-2 h-4 w-4" />
+                        {csvFile ? csvFile.name : 'Choose CSV File'}
+                      </span>
+                    </Button>
+                  </label>
+                </div>
+
+                {csvFile && (
+                  <div className="space-y-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="csv-column">Text Column Name (optional)</Label>
+                      <Input
+                        id="csv-column"
+                        placeholder="text, comment, review, content..."
+                        value={csvColumn}
+                        onChange={(e) => setCsvColumn(e.target.value)}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Leave as &quot;text&quot; or enter the column name containing text data
+                      </p>
+                    </div>
+
+                    <Button
+                      onClick={handleCsvUpload}
+                      disabled={isAnalyzing}
+                      className="w-full bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600"
+                    >
+                      {isAnalyzing ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Analyzing CSV...
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="mr-2 h-4 w-4" />
+                          Analyze CSV
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                )}
               </div>
             </TabsContent>
 
             <TabsContent value="image" className="space-y-4">
-              <div className="border-2 border-dashed rounded-lg p-12 text-center hover:border-blue-500 transition-colors">
-                <ImageIcon className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                <p className="text-sm font-medium mb-2">Image OCR analysis coming soon</p>
-                <p className="text-xs text-muted-foreground mb-4">Feature under development</p>
+              <div className="space-y-4">
+                <div className="border-2 border-dashed rounded-lg p-8 text-center hover:border-blue-500 transition-colors">
+                  <ImageIcon className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                  <p className="text-sm font-medium mb-2">Upload Image with Text</p>
+                  <p className="text-xs text-muted-foreground mb-4">
+                    OCR will extract text from your image and analyze sentiment (max 10MB)
+                  </p>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageChange}
+                    className="hidden"
+                    id="image-upload"
+                  />
+                  <label htmlFor="image-upload">
+                    <Button variant="outline" className="cursor-pointer" asChild>
+                      <span>
+                        <ImageIcon className="mr-2 h-4 w-4" />
+                        {imageFile ? imageFile.name : 'Choose Image File'}
+                      </span>
+                    </Button>
+                  </label>
+                </div>
+
+                {imageFile && (
+                  <div className="space-y-3">
+                    <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                      <p className="text-sm text-blue-800">
+                        <strong>Note:</strong> OCR will extract text from the image. Supported formats: JPG, PNG, GIF, BMP, WEBP
+                      </p>
+                    </div>
+
+                    <Button
+                      onClick={handleImageUpload}
+                      disabled={isAnalyzing}
+                      className="w-full bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600"
+                    >
+                      {isAnalyzing ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Extracting & Analyzing...
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="mr-2 h-4 w-4" />
+                          Extract & Analyze Image
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                )}
               </div>
             </TabsContent>
           </Tabs>

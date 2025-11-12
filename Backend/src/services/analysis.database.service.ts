@@ -12,6 +12,9 @@ export interface Analysis {
   negativeCount: number;
   neutralCount: number;
   averageScore: number;
+  filePath?: string | null;
+  fileUrl?: string | null;
+  originalFileName?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -39,8 +42,11 @@ class AnalysisDatabaseService {
   async saveAnalysis(
     userId: string,
     title: string,
-    inputType: 'text' | 'batch' | 'keywords',
-    results: TextAnalysisResult[]
+    inputType: 'text' | 'batch' | 'keywords' | 'csv',
+    results: TextAnalysisResult[],
+    filePath?: string,
+    fileUrl?: string,
+    originalFileName?: string
   ): Promise<AnalysisWithItems> {
     try {
       // Calculate statistics
@@ -62,6 +68,9 @@ class AnalysisDatabaseService {
           negative_count: negativeCount,
           neutral_count: neutralCount,
           average_score: averageScore,
+          file_path: filePath || null,
+          file_url: fileUrl || null,
+          original_file_name: originalFileName || null,
         })
         .select()
         .single();
@@ -246,6 +255,9 @@ class AnalysisDatabaseService {
       negativeCount: row.negative_count,
       neutralCount: row.neutral_count,
       averageScore: parseFloat(row.average_score),
+      filePath: row.file_path || null,
+      fileUrl: row.file_url || null,
+      originalFileName: row.original_file_name || null,
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at),
     };

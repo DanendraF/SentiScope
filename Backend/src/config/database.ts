@@ -27,6 +27,18 @@ export const supabase = createClient(
       persistSession: false,
       autoRefreshToken: false,
     },
+    global: {
+      headers: {
+        'x-client-info': 'sentiscope-backend',
+      },
+    },
+    db: {
+      schema: 'public',
+    },
+    // Increase timeout to 30 seconds
+    realtime: {
+      timeout: 30000,
+    },
   }
 );
 

@@ -8,6 +8,7 @@ import { errorHandler } from './middleware/errorHandler';
 import { notFoundHandler } from './middleware/notFoundHandler';
 import apiRoutes from './routes';
 import { testConnection } from './config/database';
+import { storageService } from './services/storage.service';
 
 // Load environment variables
 dotenv.config();
@@ -71,6 +72,10 @@ app.listen(PORT, async () => {
 
   // Test database connection on startup
   await testConnection();
+
+  // Initialize storage bucket
+  await storageService.initializeBucket();
+
   console.log('');
   console.log('✅ Server is ready to accept connections');
   console.log('');

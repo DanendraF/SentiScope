@@ -327,6 +327,81 @@ class ApiClient {
     return this.post('/analysis/keywords', { keywords, saveToDatabase, title });
   }
 
+  async analyzeCsv(file: File, saveToDatabase?: boolean, title?: string, textColumn?: string) {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (saveToDatabase !== undefined) formData.append('saveToDatabase', String(saveToDatabase));
+    if (title) formData.append('title', title);
+    if (textColumn) formData.append('textColumn', textColumn);
+
+    const token = this.getToken();
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    try {
+      const response = await fetch(`${this.baseURL}/analysis/csv`, {
+        method: 'POST',
+        headers,
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        const error: any = new Error(data.message || 'An error occurred');
+        error.errors = data.errors;
+        error.statusCode = response.status;
+        throw error;
+      }
+
+      return data;
+    } catch (error: any) {
+      if (error.errors) {
+        throw error;
+      }
+      throw new Error(error.message || 'Network error');
+    }
+  }
+
+  async analyzeImage(file: File, saveToDatabase?: boolean, title?: string) {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (saveToDatabase !== undefined) formData.append('saveToDatabase', String(saveToDatabase));
+    if (title) formData.append('title', title);
+
+    const token = this.getToken();
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    try {
+      const response = await fetch(`${this.baseURL}/analysis/image`, {
+        method: 'POST',
+        headers,
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        const error: any = new Error(data.message || 'An error occurred');
+        error.errors = data.errors;
+        error.statusCode = response.status;
+        throw error;
+      }
+
+      return data;
+    } catch (error: any) {
+      if (error.errors) {
+        throw error;
+      }
+      throw new Error(error.message || 'Network error');
+    }
+  }
+
   async getAnalysisHistory(limit?: number, offset?: number) {
     const params = new URLSearchParams();
     if (limit) params.append('limit', limit.toString());
