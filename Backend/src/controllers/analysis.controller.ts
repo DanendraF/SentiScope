@@ -3,6 +3,7 @@ import { AuthRequest } from '../middleware/auth';
 import { sentimentService } from '../services/sentiment.service';
 import { analysisDatabaseService } from '../services/analysis.database.service';
 import { storageService } from '../services/storage.service';
+import { openaiService } from '../services/openai.service';
 import { AppError } from '../utils/AppError';
 import Papa from 'papaparse';
 import fs from 'fs';
@@ -163,6 +164,127 @@ export const analyzeKeywords = async (
 };
 
 /**
+ * Deep sentiment analysis with AI explanations
+ * POST /api/analysis/deep
+ */
+export const deepSentimentAnalysis = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { text, texts, saveToDatabase = false, title } = req.body;
+
+    if (!openaiService.isAvailable()) {
+      throw new AppError('AI service is not available. Please configure OPENAI_API_KEY', 503);
+    }
+
+    let results: any[] = [];
+    let inputType = 'text';
+
+    // Handle single text
+    if (text && typeof text === 'string') {
+      console.log('🤖 Performing deep AI sentiment analysis...');
+      const aiResult = await openaiService.deepSentimentAnalysis(text);
+
+      results.push({
+        text: text,
+        sentiment: {
+          label: aiResult.sentiment,
+          score: aiResult.score,
+        },
+        explanation: aiResult.explanation,
+        keyPhrases: aiResult.keyPhrases,
+      });
+    }
+    // Handle batch texts
+    else if (texts && Array.isArray(texts)) {
+      if (texts.length === 0) {
+        throw new AppError('Texts array cannot be empty', 400);
+      }
+
+      if (texts.length > 20) {
+        throw new AppError('Maximum 20 texts for deep analysis (due to API costs)', 400);
+      }
+
+      console.log(`🤖 Performing batch deep AI sentiment analysis on ${texts.length} texts...`);
+      inputType = 'batch';
+
+      const aiResults = await openaiService.batchDeepSentimentAnalysis(texts);
+
+      results = aiResults.map((result) => ({
+        text: result.text,
+        sentiment: {
+          label: result.sentiment,
+          score: result.score,
+        },
+        explanation: result.explanation,
+        keyPhrases: result.keyPhrases,
+      }));
+    } else {
+      throw new AppError('Either "text" or "texts" is required', 400);
+    }
+
+    // Calculate statistics
+    const statistics = {
+      total: results.length,
+      positive: results.filter((r) => r.sentiment.label === 'positive').length,
+      negative: results.filter((r) => r.sentiment.label === 'negative').length,
+      neutral: results.filter((r) => r.sentiment.label === 'neutral').length,
+      averageScore:
+        results.reduce((sum, r) => sum + r.sentiment.score, 0) / results.length,
+    };
+
+    // Generate AI insights
+    console.log('🤖 Generating AI insights...');
+    const insights = await openaiService.generateInsights({
+      total: statistics.total,
+      positive: statistics.positive,
+      negative: statistics.negative,
+      neutral: statistics.neutral,
+      averageScore: statistics.averageScore,
+      sampleTexts: results.map((r) => ({
+        text: r.text,
+        sentiment: r.sentiment.label,
+        score: r.sentiment.score,
+      })),
+    });
+
+    // Save to database if requested
+    let savedAnalysis = null;
+    if (saveToDatabase && req.user) {
+      const analysisTitle = title || `Deep AI Analysis - ${new Date().toLocaleDateString()}`;
+
+      // Convert to format expected by saveAnalysis
+      const formattedResults = results.map((r) => ({
+        text: r.text,
+        sentiment: r.sentiment,
+      }));
+
+      savedAnalysis = await analysisDatabaseService.saveAnalysis(
+        req.user.userId,
+        analysisTitle,
+        inputType as 'text' | 'batch' | 'keywords' | 'csv',
+        formattedResults
+      );
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Deep AI analysis completed for ${results.length} text(s)`,
+      data: {
+        results,
+        statistics,
+        insights,
+        ...(savedAnalysis && { analysis: savedAnalysis }),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * Get analysis statistics
  * POST /api/analysis/statistics
  */
@@ -308,6 +430,49 @@ export const deleteAnalysis = async (
 };
 
 /**
+ * Helper function: Fallback column detection (manual)
+ */
+const fallbackColumnDetection = (columns: string[]): string => {
+  // Try common column names (including plural variations)
+  const commonNames = [
+    'text', 'texts',
+    'comment', 'comments',
+    'review', 'reviews',
+    'content', 'contents',
+    'message', 'messages',
+    'description', 'descriptions',
+    'feedback', 'feedbacks',
+    'opinion', 'opinions',
+    'sentence', 'sentences',
+  ];
+
+  // Try exact match first
+  let foundColumn = commonNames.find(name => columns.includes(name));
+
+  // If no exact match, try case-insensitive match
+  if (!foundColumn) {
+    foundColumn = columns.find(col =>
+      commonNames.some(name => col.toLowerCase() === name.toLowerCase())
+    );
+  }
+
+  // If still no match, try partial match (e.g., "user_comment" contains "comment")
+  if (!foundColumn) {
+    foundColumn = columns.find(col => {
+      const lowerCol = col.toLowerCase();
+      return commonNames.some(name => lowerCol.includes(name.toLowerCase()));
+    });
+  }
+
+  if (foundColumn) {
+    return foundColumn;
+  }
+
+  // Use first column if no match found
+  return columns[0];
+};
+
+/**
  * Analyze CSV file
  * POST /api/analysis/csv
  */
@@ -373,48 +538,25 @@ export const analyzeCsvFile = async (
 
     // Get available columns
     const columns = Object.keys(rows[0]);
-
-    // Find text column with smart detection
     let selectedColumn = textColumn;
 
-    if (!columns.includes(textColumn)) {
-      // Try common column names (including plural variations)
-      const commonNames = [
-        'text', 'texts',
-        'comment', 'comments',
-        'review', 'reviews',
-        'content', 'contents',
-        'message', 'messages',
-        'description', 'descriptions',
-        'feedback', 'feedbacks',
-        'opinion', 'opinions',
-        'sentence', 'sentences',
-      ];
+    // AI-assisted column detection if OpenAI is available and column not specified
+    if (!columns.includes(textColumn) && openaiService.isAvailable()) {
+      try {
+        console.log('🤖 Using AI to detect text column...');
+        selectedColumn = await openaiService.detectTextColumn(columns, rows.slice(0, 3));
+        console.log(`✅ AI detected column: "${selectedColumn}"`);
+      } catch (aiError: any) {
+        console.warn('⚠️ AI column detection failed, falling back to manual detection');
+        console.warn('   Error:', aiError.message);
 
-      // Try exact match first
-      let foundColumn = commonNames.find(name => columns.includes(name));
-
-      // If no exact match, try case-insensitive match
-      if (!foundColumn) {
-        foundColumn = columns.find(col =>
-          commonNames.some(name => col.toLowerCase() === name.toLowerCase())
-        );
+        // Fallback to manual detection
+        selectedColumn = fallbackColumnDetection(columns);
       }
-
-      // If still no match, try partial match (e.g., "user_comment" contains "comment")
-      if (!foundColumn) {
-        foundColumn = columns.find(col => {
-          const lowerCol = col.toLowerCase();
-          return commonNames.some(name => lowerCol.includes(name.toLowerCase()));
-        });
-      }
-
-      if (foundColumn) {
-        selectedColumn = foundColumn;
-      } else {
-        // Use first column if no match found
-        selectedColumn = columns[0];
-      }
+    } else if (!columns.includes(textColumn)) {
+      // Fallback to manual detection if AI not available
+      console.log('📊 Using manual column detection...');
+      selectedColumn = fallbackColumnDetection(columns);
     }
 
     console.log(`📊 CSV columns found:`, columns);
@@ -432,37 +574,91 @@ export const analyzeCsvFile = async (
       throw new AppError(`No valid text found in column "${selectedColumn}"`, 400);
     }
 
-    // Limit to 500 texts for performance
-    const textsToAnalyze = texts.slice(0, 500);
+    // Always use AI analysis if available
+    let results: any[] = [];
+    let statistics: any;
+    let aiInsights: string | undefined;
 
-    if (texts.length > 500) {
-      console.log(`⚠️ CSV has ${texts.length} rows, limiting to 500 for analysis`);
-    }
+    if (openaiService.isAvailable()) {
+      // AI Analysis Mode - limit to 50 texts due to cost
+      const textsToAnalyze = texts.slice(0, 50);
 
-    console.log(`🔍 Analyzing ${textsToAnalyze.length} texts from CSV...`);
-
-    // Analyze texts in batches of 100 (API limit)
-    const BATCH_SIZE = 100;
-    const allResults: any[] = [];
-
-    for (let i = 0; i < textsToAnalyze.length; i += BATCH_SIZE) {
-      const batch = textsToAnalyze.slice(i, i + BATCH_SIZE);
-      const batchNum = Math.floor(i / BATCH_SIZE) + 1;
-      const totalBatches = Math.ceil(textsToAnalyze.length / BATCH_SIZE);
-
-      console.log(`📦 Processing batch ${batchNum}/${totalBatches} (${batch.length} texts)...`);
-
-      const batchResults = await sentimentService.analyzeBatchTexts(batch);
-      allResults.push(...batchResults);
-
-      // Small delay between batches to avoid rate limiting
-      if (i + BATCH_SIZE < textsToAnalyze.length) {
-        await new Promise(resolve => setTimeout(resolve, 500));
+      if (texts.length > 50) {
+        console.log(`⚠️ CSV has ${texts.length} rows, limiting to 50 for AI analysis (cost control)`);
       }
-    }
 
-    const results = allResults;
-    const statistics = sentimentService.getSentimentStatistics(results);
+      console.log(`🤖 Analyzing ${textsToAnalyze.length} texts from CSV with AI...`);
+
+      // Use AI for deep analysis
+      const aiResults = await openaiService.batchDeepSentimentAnalysis(textsToAnalyze);
+
+      results = aiResults.map((result) => ({
+        text: result.text,
+        sentiment: {
+          label: result.sentiment,
+          score: result.score,
+        },
+        explanation: result.explanation,
+        keyPhrases: result.keyPhrases,
+      }));
+
+      // Calculate statistics
+      statistics = {
+        total: results.length,
+        positive: results.filter((r) => r.sentiment.label === 'positive').length,
+        negative: results.filter((r) => r.sentiment.label === 'negative').length,
+        neutral: results.filter((r) => r.sentiment.label === 'neutral').length,
+        averageScore: results.reduce((sum, r) => sum + r.sentiment.score, 0) / results.length,
+      };
+
+      // Generate AI insights
+      console.log('🤖 Generating AI insights for CSV data...');
+      aiInsights = await openaiService.generateInsights({
+        total: statistics.total,
+        positive: statistics.positive,
+        negative: statistics.negative,
+        neutral: statistics.neutral,
+        averageScore: statistics.averageScore,
+        sampleTexts: results.slice(0, 5).map((r) => ({
+          text: r.text,
+          sentiment: r.sentiment.label,
+          score: r.sentiment.score,
+        })),
+      });
+
+    } else {
+      // Traditional Analysis Mode - supports up to 500 texts
+      const textsToAnalyze = texts.slice(0, 500);
+
+      if (texts.length > 500) {
+        console.log(`⚠️ CSV has ${texts.length} rows, limiting to 500 for analysis`);
+      }
+
+      console.log(`🔍 Analyzing ${textsToAnalyze.length} texts from CSV...`);
+
+      // Analyze texts in batches of 100 (API limit)
+      const BATCH_SIZE = 100;
+      const allResults: any[] = [];
+
+      for (let i = 0; i < textsToAnalyze.length; i += BATCH_SIZE) {
+        const batch = textsToAnalyze.slice(i, i + BATCH_SIZE);
+        const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+        const totalBatches = Math.ceil(textsToAnalyze.length / BATCH_SIZE);
+
+        console.log(`📦 Processing batch ${batchNum}/${totalBatches} (${batch.length} texts)...`);
+
+        const batchResults = await sentimentService.analyzeBatchTexts(batch);
+        allResults.push(...batchResults);
+
+        // Small delay between batches to avoid rate limiting
+        if (i + BATCH_SIZE < textsToAnalyze.length) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
+
+      results = allResults;
+      statistics = sentimentService.getSentimentStatistics(results);
+    }
 
     // Upload file to Supabase Storage
     let filePath: string | undefined;
@@ -508,15 +704,17 @@ export const analyzeCsvFile = async (
 
     res.status(200).json({
       success: true,
-      message: `Analyzed ${results.length} texts from CSV successfully`,
+      message: `Analyzed ${results.length} texts from CSV successfully${aiInsights ? ' with AI' : ''}`,
       data: {
         fileName: req.file.originalname,
         totalRows: rows.length,
         analyzedRows: results.length,
         columnUsed: selectedColumn,
         availableColumns: columns,
+        usedAI: !!aiInsights,
         results,
         statistics,
+        ...(aiInsights && { insights: aiInsights }),
         ...(savedAnalysis && { analysis: savedAnalysis }),
       },
     });
@@ -597,9 +795,63 @@ export const analyzeImageFile = async (
 
     console.log(`🔍 Analyzing ${texts.length} text lines from image...`);
 
-    // Analyze all texts
-    const results = await sentimentService.analyzeBatchTexts(texts);
-    const statistics = sentimentService.getSentimentStatistics(results);
+    // Always use AI analysis if available
+    let results: any[] = [];
+    let statistics: any;
+    let aiInsights: string | undefined;
+
+    if (openaiService.isAvailable()) {
+      // AI Analysis Mode - limit to 20 texts due to cost
+      const textsToAnalyze = texts.slice(0, 20);
+
+      if (texts.length > 20) {
+        console.log(`⚠️ Image has ${texts.length} lines, limiting to 20 for AI analysis (cost control)`);
+      }
+
+      console.log(`🤖 Analyzing ${textsToAnalyze.length} text lines with AI...`);
+
+      // Use AI for deep analysis
+      const aiResults = await openaiService.batchDeepSentimentAnalysis(textsToAnalyze);
+
+      results = aiResults.map((result) => ({
+        text: result.text,
+        sentiment: {
+          label: result.sentiment,
+          score: result.score,
+        },
+        explanation: result.explanation,
+        keyPhrases: result.keyPhrases,
+      }));
+
+      // Calculate statistics
+      statistics = {
+        total: results.length,
+        positive: results.filter((r) => r.sentiment.label === 'positive').length,
+        negative: results.filter((r) => r.sentiment.label === 'negative').length,
+        neutral: results.filter((r) => r.sentiment.label === 'neutral').length,
+        averageScore: results.reduce((sum, r) => sum + r.sentiment.score, 0) / results.length,
+      };
+
+      // Generate AI insights
+      console.log('🤖 Generating AI insights for OCR text...');
+      aiInsights = await openaiService.generateInsights({
+        total: statistics.total,
+        positive: statistics.positive,
+        negative: statistics.negative,
+        neutral: statistics.neutral,
+        averageScore: statistics.averageScore,
+        sampleTexts: results.slice(0, 5).map((r) => ({
+          text: r.text,
+          sentiment: r.sentiment.label,
+          score: r.sentiment.score,
+        })),
+      });
+
+    } else {
+      // Traditional Analysis Mode
+      results = await sentimentService.analyzeBatchTexts(texts);
+      statistics = sentimentService.getSentimentStatistics(results);
+    }
 
     // Upload file to Supabase Storage
     let filePath: string | undefined;
@@ -645,13 +897,15 @@ export const analyzeImageFile = async (
 
     res.status(200).json({
       success: true,
-      message: `Analyzed ${results.length} text lines from image successfully`,
+      message: `Analyzed ${results.length} text lines from image successfully${aiInsights ? ' with AI' : ''}`,
       data: {
         fileName: req.file.originalname,
         extractedText: cleanedText,
         analyzedLines: results.length,
+        usedAI: !!aiInsights,
         results,
         statistics,
+        ...(aiInsights && { insights: aiInsights }),
         ...(savedAnalysis && { analysis: savedAnalysis }),
       },
     });

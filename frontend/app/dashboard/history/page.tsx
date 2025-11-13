@@ -3,7 +3,10 @@
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Clock, TrendingUp, FileText, Loader2, AlertCircle } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Clock, TrendingUp, FileText, Loader2, AlertCircle, Search, Filter } from 'lucide-react';
 import { apiClient } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
@@ -23,23 +26,43 @@ interface Analysis {
 
 export default function HistoryPage() {
   const [analyses, setAnalyses] = useState<Analysis[]>([]);
+  const [filteredAnalyses, setFilteredAnalyses] = useState<Analysis[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const itemsPerPage = 10;
   const { toast } = useToast();
   const router = useRouter();
 
-  useEffect(() => {
-    fetchHistory();
-  }, []);
+  // Filter states
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sentimentFilter, setSentimentFilter] = useState<string>('all');
+  const [inputTypeFilter, setInputTypeFilter] = useState<string>('all');
+  const [dateFromFilter, setDateFromFilter] = useState('');
+  const [dateToFilter, setDateToFilter] = useState('');
 
-  const fetchHistory = async () => {
+  useEffect(() => {
+    fetchHistory(currentPage);
+  }, [currentPage]);
+
+  // Apply filters whenever analyses or filter criteria change
+  useEffect(() => {
+    applyFilters();
+  }, [analyses, searchQuery, sentimentFilter, inputTypeFilter, dateFromFilter, dateToFilter]);
+
+  const fetchHistory = async (page: number) => {
     try {
       setIsLoading(true);
       setError(null);
-      const response: any = await apiClient.getAnalysisHistory(50, 0);
+      const offset = (page - 1) * itemsPerPage;
+      const response: any = await apiClient.getAnalysisHistory(itemsPerPage, offset);
 
       if (response.success && response.data) {
         setAnalyses(response.data.analyses);
+        setTotalCount(response.data.pagination.total);
+        setTotalPages(Math.ceil(response.data.pagination.total / itemsPerPage));
       }
     } catch (err: any) {
       console.error('Failed to fetch history:', err);
@@ -52,6 +75,59 @@ export default function HistoryPage() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const applyFilters = () => {
+    let filtered = [...analyses];
+
+    // Search filter
+    if (searchQuery) {
+      filtered = filtered.filter(analysis =>
+        analysis.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        analysis.originalFileName?.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+    }
+
+    // Sentiment filter
+    if (sentimentFilter !== 'all') {
+      filtered = filtered.filter(analysis => {
+        const dominant = getDominantSentiment(analysis).toLowerCase();
+        return dominant === sentimentFilter;
+      });
+    }
+
+    // Input type filter
+    if (inputTypeFilter !== 'all') {
+      filtered = filtered.filter(analysis => analysis.inputType === inputTypeFilter);
+    }
+
+    // Date range filter
+    if (dateFromFilter) {
+      filtered = filtered.filter(analysis => {
+        const analysisDate = new Date(analysis.createdAt);
+        const fromDate = new Date(dateFromFilter);
+        return analysisDate >= fromDate;
+      });
+    }
+
+    if (dateToFilter) {
+      filtered = filtered.filter(analysis => {
+        const analysisDate = new Date(analysis.createdAt);
+        const toDate = new Date(dateToFilter);
+        toDate.setHours(23, 59, 59, 999); // End of day
+        return analysisDate <= toDate;
+      });
+    }
+
+    setFilteredAnalyses(filtered);
+  };
+
+  const clearFilters = () => {
+    setSearchQuery('');
+    setSentimentFilter('all');
+    setInputTypeFilter('all');
+    setDateFromFilter('');
+    setDateToFilter('');
   };
 
   const getTimeAgo = (dateString: string) => {
@@ -105,6 +181,107 @@ export default function HistoryPage() {
         <p className="text-muted-foreground">Track all your analysis activities</p>
       </div>
 
+      {/* Filters Card */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center">
+                <Filter className="mr-2 h-5 w-5" />
+                Filters
+              </CardTitle>
+              <CardDescription>Filter your analysis history</CardDescription>
+            </div>
+            {(searchQuery || sentimentFilter !== 'all' || inputTypeFilter !== 'all' || dateFromFilter || dateToFilter) && (
+              <Button variant="ghost" size="sm" onClick={clearFilters}>
+                Clear All
+              </Button>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+            {/* Search */}
+            <div className="space-y-2">
+              <Label htmlFor="search">Search</Label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="search"
+                  placeholder="Title or filename..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+            </div>
+
+            {/* Sentiment Filter */}
+            <div className="space-y-2">
+              <Label>Sentiment</Label>
+              <Select value={sentimentFilter} onValueChange={setSentimentFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="All sentiments" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Sentiments</SelectItem>
+                  <SelectItem value="positive">Positive</SelectItem>
+                  <SelectItem value="negative">Negative</SelectItem>
+                  <SelectItem value="neutral">Neutral</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Input Type Filter */}
+            <div className="space-y-2">
+              <Label>Input Type</Label>
+              <Select value={inputTypeFilter} onValueChange={setInputTypeFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="All types" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Types</SelectItem>
+                  <SelectItem value="text">Text</SelectItem>
+                  <SelectItem value="batch">Batch</SelectItem>
+                  <SelectItem value="csv">CSV</SelectItem>
+                  <SelectItem value="keywords">Keywords</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Date From */}
+            <div className="space-y-2">
+              <Label htmlFor="dateFrom">From Date</Label>
+              <Input
+                id="dateFrom"
+                type="date"
+                value={dateFromFilter}
+                onChange={(e) => setDateFromFilter(e.target.value)}
+              />
+            </div>
+
+            {/* Date To */}
+            <div className="space-y-2">
+              <Label htmlFor="dateTo">To Date</Label>
+              <Input
+                id="dateTo"
+                type="date"
+                value={dateToFilter}
+                onChange={(e) => setDateToFilter(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {/* Results count */}
+          <div className="mt-4 pt-4 border-t">
+            <p className="text-sm text-muted-foreground">
+              Showing <span className="font-semibold">{filteredAnalyses.length}</span> of{' '}
+              <span className="font-semibold">{analyses.length}</span> results
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle>Recent Activity</CardTitle>
@@ -123,7 +300,7 @@ export default function HistoryPage() {
                 <p className="font-semibold text-destructive">Failed to load history</p>
                 <p className="text-sm text-muted-foreground mt-1">{error}</p>
               </div>
-              <Button onClick={fetchHistory} variant="outline">
+              <Button onClick={() => fetchHistory(currentPage)} variant="outline">
                 Retry
               </Button>
             </div>
@@ -140,9 +317,22 @@ export default function HistoryPage() {
                 Start Analyzing
               </Button>
             </div>
+          ) : filteredAnalyses.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 space-y-4">
+              <Search className="h-12 w-12 text-muted-foreground" />
+              <div className="text-center">
+                <p className="font-semibold">No results found</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Try adjusting your filters to see more results
+                </p>
+              </div>
+              <Button onClick={clearFilters} variant="outline">
+                Clear Filters
+              </Button>
+            </div>
           ) : (
             <div className="space-y-4">
-              {analyses.map((analysis) => {
+              {filteredAnalyses.map((analysis) => {
                 const sentiment = getDominantSentiment(analysis);
 
                 return (
@@ -205,6 +395,59 @@ export default function HistoryPage() {
                   </div>
                 );
               })}
+            </div>
+          )}
+
+          {/* Pagination */}
+          {!isLoading && !error && analyses.length > 0 && totalPages > 1 && (
+            <div className="flex items-center justify-between border-t pt-4 mt-4">
+              <div className="text-sm text-muted-foreground">
+                Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, totalCount)} of {totalCount} results
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                >
+                  Previous
+                </Button>
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    let pageNum;
+                    if (totalPages <= 5) {
+                      pageNum = i + 1;
+                    } else if (currentPage <= 3) {
+                      pageNum = i + 1;
+                    } else if (currentPage >= totalPages - 2) {
+                      pageNum = totalPages - 4 + i;
+                    } else {
+                      pageNum = currentPage - 2 + i;
+                    }
+
+                    return (
+                      <Button
+                        key={pageNum}
+                        variant={currentPage === pageNum ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => setCurrentPage(pageNum)}
+                        className="w-10"
+                      >
+                        {pageNum}
+                      </Button>
+                    );
+                  })}
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage === totalPages}
+                >
+                  Next
+                </Button>
+              </div>
             </div>
           )}
         </CardContent>

@@ -37,9 +37,9 @@ class ApiClient {
   ): Promise<ApiResponse<T>> {
     const token = this.getToken();
 
-    const headers: HeadersInit = {
+    const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      ...options.headers,
+      ...(options.headers as Record<string, string>),
     };
 
     if (token) {
@@ -327,12 +327,17 @@ class ApiClient {
     return this.post('/analysis/keywords', { keywords, saveToDatabase, title });
   }
 
-  async analyzeCsv(file: File, saveToDatabase?: boolean, title?: string, textColumn?: string) {
+  async deepAnalysis(text?: string, texts?: string[], saveToDatabase?: boolean, title?: string) {
+    return this.post('/analysis/deep', { text, texts, saveToDatabase, title });
+  }
+
+  async analyzeCsv(file: File, saveToDatabase?: boolean, title?: string, textColumn?: string, useAI?: boolean) {
     const formData = new FormData();
     formData.append('file', file);
     if (saveToDatabase !== undefined) formData.append('saveToDatabase', String(saveToDatabase));
     if (title) formData.append('title', title);
     if (textColumn) formData.append('textColumn', textColumn);
+    if (useAI !== undefined) formData.append('useAI', String(useAI));
 
     const token = this.getToken();
     const headers: Record<string, string> = {};
@@ -365,11 +370,12 @@ class ApiClient {
     }
   }
 
-  async analyzeImage(file: File, saveToDatabase?: boolean, title?: string) {
+  async analyzeImage(file: File, saveToDatabase?: boolean, title?: string, useAI?: boolean) {
     const formData = new FormData();
     formData.append('file', file);
     if (saveToDatabase !== undefined) formData.append('saveToDatabase', String(saveToDatabase));
     if (title) formData.append('title', title);
+    if (useAI !== undefined) formData.append('useAI', String(useAI));
 
     const token = this.getToken();
     const headers: Record<string, string> = {};

@@ -6,6 +6,7 @@ import {
   analyzeKeywords,
   analyzeCsvFile,
   analyzeImageFile,
+  deepSentimentAnalysis,
   getStatistics,
   getAnalysisHistory,
   getAnalysisById,
@@ -113,6 +114,13 @@ router.post(
   authenticateToken,
   imageUpload.single('file'),
   analyzeImageFile
+);
+
+// POST /api/analysis/deep - Deep sentiment analysis with AI explanations
+router.post(
+  '/deep',
+  authenticateToken,
+  deepSentimentAnalysis
 );
 
 // POST /api/analysis/statistics - Get statistics from results

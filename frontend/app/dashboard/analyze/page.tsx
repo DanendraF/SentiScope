@@ -7,11 +7,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Upload, FileText, Image as ImageIcon, Sparkles, Download, Loader2 } from 'lucide-react';
+import { Upload, FileText, Image as ImageIcon, Sparkles, Download, Loader2, FileDown } from 'lucide-react';
 import { SentimentPieChart } from '@/components/charts/sentiment-pie-chart';
 import { SentimentTrendChart } from '@/components/charts/sentiment-trend-chart';
 import { KeywordBarChart } from '@/components/charts/keyword-bar-chart';
 import { LikertScaleChart } from '@/components/charts/likert-scale-chart';
+import { WordFrequencyChart } from '@/components/charts/word-frequency-chart';
+import { exportToPDF, exportToExcel, exportToCSV } from '@/lib/export-utils';
 import {
   Table,
   TableBody,
@@ -30,6 +32,8 @@ interface AnalysisResult {
     score: number;
   };
   keywords?: string[];
+  explanation?: string;
+  keyPhrases?: string[];
 }
 
 interface Statistics {
@@ -48,7 +52,6 @@ export default function AnalyzePage() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const [textInput, setTextInput] = useState('');
-  const [datasetKeywords, setDatasetKeywords] = useState('');
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvColumn, setCsvColumn] = useState('text');
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -56,6 +59,9 @@ export default function AnalyzePage() {
   const [filteredResults, setFilteredResults] = useState<AnalysisResult[]>([]);
   const [statistics, setStatistics] = useState<Statistics | null>(null);
   const [keywordFilter, setKeywordFilter] = useState('');
+  const [aiInsights, setAiInsights] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   const handleAnalyze = async () => {
     if (!textInput.trim()) {
@@ -68,40 +74,85 @@ export default function AnalyzePage() {
     }
 
     setIsAnalyzing(true);
-    console.log('🔍 Analyzing text:', textInput);
+    console.log('🔍 Analyzing text and searching dataset:', textInput);
 
     try {
       // Split by newlines for batch analysis
       const texts = textInput.split('\n').filter(t => t.trim());
 
-      let response: any;
-      if (texts.length === 1) {
-        // Single text analysis
-        response = await apiClient.analyzeText(texts[0], true);
-        console.log('✅ API Response:', response);
+      // Extract keywords from user input for dataset search
+      const keywords = texts.flatMap(text =>
+        text.toLowerCase()
+          .split(/\s+/)
+          .filter(word => word.length > 3) // Only words longer than 3 chars
+      );
+
+      let allResults: AnalysisResult[] = [];
+      let insights: string | null = null;
+
+      // 1. Analyze user's text input with AI (limit to 20 for cost control)
+      const textsToAnalyze = texts.slice(0, 20);
+      if (textsToAnalyze.length > 0) {
+        console.log('🤖 Using AI Deep Analysis for user input...');
+        const response: any = await apiClient.deepAnalysis(
+          textsToAnalyze.length === 1 ? textsToAnalyze[0] : undefined,
+          textsToAnalyze.length > 1 ? textsToAnalyze : undefined,
+          true
+        );
+        console.log('✅ AI Analysis Response:', response);
 
         if (response.success && response.data) {
-          setResults([response.data.result]);
-          setFilteredResults([response.data.result]);
-          setStatistics(response.data.statistics);
-        }
-      } else {
-        // Batch analysis
-        response = await apiClient.analyzeBatch(texts, true);
-        console.log('✅ API Response:', response);
-
-        if (response.success && response.data) {
-          setResults(response.data.results);
-          setFilteredResults(response.data.results);
-          setStatistics(response.data.statistics);
+          allResults.push(...response.data.results);
+          insights = response.data.insights || null;
         }
       }
 
-      setShowResults(true);
-      toast({
-        title: 'Success',
-        description: 'Analysis completed successfully',
-      });
+      // 2. Search and analyze dataset with keywords
+      if (keywords.length > 0) {
+        console.log('🔍 Searching dataset with keywords:', keywords.slice(0, 5));
+        const datasetResponse: any = await apiClient.analyzeYoutubeComments(
+          50,
+          0,
+          keywords.slice(0, 5) // Limit to first 5 keywords
+        );
+        console.log('✅ Dataset Response:', datasetResponse);
+
+        if (datasetResponse.success && datasetResponse.data) {
+          allResults.push(...datasetResponse.data.results);
+        }
+      }
+
+      // Combine and calculate statistics
+      if (allResults.length > 0) {
+        setResults(allResults);
+        setFilteredResults(allResults);
+        setCurrentPage(1); // Reset to first page
+
+        // Calculate combined statistics
+        const combinedStats = {
+          total: allResults.length,
+          positive: allResults.filter(r => r.sentiment.label === 'positive').length,
+          negative: allResults.filter(r => r.sentiment.label === 'negative').length,
+          neutral: allResults.filter(r => r.sentiment.label === 'neutral').length,
+          positivePercentage: 0,
+          negativePercentage: 0,
+          neutralPercentage: 0,
+          averageScore: allResults.reduce((sum, r) => sum + r.sentiment.score, 0) / allResults.length,
+        };
+
+        combinedStats.positivePercentage = (combinedStats.positive / combinedStats.total) * 100;
+        combinedStats.negativePercentage = (combinedStats.negative / combinedStats.total) * 100;
+        combinedStats.neutralPercentage = (combinedStats.neutral / combinedStats.total) * 100;
+
+        setStatistics(combinedStats);
+        setAiInsights(insights);
+        setShowResults(true);
+
+        toast({
+          title: insights ? 'AI Analysis Complete' : 'Analysis Complete',
+          description: `Analyzed ${textsToAnalyze.length} input text(s)${insights ? ' with AI' : ''} + ${allResults.length - textsToAnalyze.length} dataset matches`,
+        });
+      }
     } catch (error: any) {
       console.error('❌ Analysis error:', error);
       toast({
@@ -114,43 +165,6 @@ export default function AnalyzePage() {
     }
   };
 
-  const handleLoadDataset = async () => {
-    setIsAnalyzing(true);
-    const keywordsInput = datasetKeywords.trim();
-    const keywords = keywordsInput ? keywordsInput.split(',').map(k => k.trim()).filter(k => k) : undefined;
-
-    console.log('📊 Loading YouTube dataset with keywords:', keywords);
-
-    try {
-      const response: any = await apiClient.analyzeYoutubeComments(50, 0, keywords);
-      console.log('✅ Dataset Response:', response);
-
-      if (response.success && response.data) {
-        setResults(response.data.results);
-        setFilteredResults(response.data.results);
-        setStatistics(response.data.statistics);
-        setShowResults(true);
-
-        const description = keywords
-          ? `Analyzed ${response.data.results.length} YouTube comments containing "${keywords.join(', ')}" with ${response.data.accuracy} accuracy`
-          : `Analyzed ${response.data.results.length} YouTube comments with ${response.data.accuracy} accuracy`;
-
-        toast({
-          title: 'Dataset Loaded',
-          description,
-        });
-      }
-    } catch (error: any) {
-      console.error('❌ Dataset error:', error);
-      toast({
-        title: 'Failed to load dataset',
-        description: error.message || 'Failed to fetch YouTube dataset',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsAnalyzing(false);
-    }
-  };
 
   const handleCsvUpload = async () => {
     if (!csvFile) {
@@ -173,11 +187,13 @@ export default function AnalyzePage() {
         setResults(response.data.results);
         setFilteredResults(response.data.results);
         setStatistics(response.data.statistics);
+        setAiInsights(response.data.insights || null);
+        setCurrentPage(1); // Reset to first page
         setShowResults(true);
 
         toast({
-          title: 'CSV Analyzed Successfully',
-          description: `Analyzed ${response.data.analyzedRows} rows from ${response.data.fileName}`,
+          title: response.data.usedAI ? 'CSV Analyzed with AI' : 'CSV Analyzed Successfully',
+          description: `Analyzed ${response.data.analyzedRows} rows from ${response.data.fileName}${response.data.usedAI ? ' using AI' : ''}`,
         });
       }
     } catch (error: any) {
@@ -251,6 +267,81 @@ export default function AnalyzePage() {
     }
   };
 
+  const handleExportPDF = async () => {
+    if (!statistics || results.length === 0) return;
+
+    try {
+      await exportToPDF({
+        title: 'Sentiment Analysis Report',
+        date: new Date().toLocaleDateString(),
+        results: results,
+        statistics: statistics,
+        aiInsights: aiInsights || undefined,
+      });
+
+      toast({
+        title: 'Success',
+        description: 'Report exported to PDF successfully',
+      });
+    } catch (error) {
+      toast({
+        title: 'Export Failed',
+        description: 'Failed to export PDF',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleExportExcel = () => {
+    if (!statistics || results.length === 0) return;
+
+    try {
+      exportToExcel({
+        title: 'Sentiment Analysis Report',
+        date: new Date().toLocaleDateString(),
+        results: results,
+        statistics: statistics,
+        aiInsights: aiInsights || undefined,
+      });
+
+      toast({
+        title: 'Success',
+        description: 'Report exported to Excel successfully',
+      });
+    } catch (error) {
+      toast({
+        title: 'Export Failed',
+        description: 'Failed to export Excel',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleExportCSV = () => {
+    if (!statistics || results.length === 0) return;
+
+    try {
+      exportToCSV({
+        title: 'Sentiment Analysis Report',
+        date: new Date().toLocaleDateString(),
+        results: results,
+        statistics: statistics,
+        aiInsights: aiInsights || undefined,
+      });
+
+      toast({
+        title: 'Success',
+        description: 'Report exported to CSV successfully',
+      });
+    } catch (error) {
+      toast({
+        title: 'Export Failed',
+        description: 'Failed to export CSV',
+        variant: 'destructive',
+      });
+    }
+  };
+
   const handleImageUpload = async () => {
     if (!imageFile) {
       toast({
@@ -272,11 +363,13 @@ export default function AnalyzePage() {
         setResults(response.data.results);
         setFilteredResults(response.data.results);
         setStatistics(response.data.statistics);
+        setAiInsights(response.data.insights || null);
+        setCurrentPage(1); // Reset to first page
         setShowResults(true);
 
         toast({
-          title: 'Image Analyzed Successfully',
-          description: `Extracted and analyzed ${response.data.analyzedLines} text lines from ${response.data.fileName}`,
+          title: response.data.usedAI ? 'Image Analyzed with AI' : 'Image Analyzed Successfully',
+          description: `Extracted and analyzed ${response.data.analyzedLines} text lines from ${response.data.fileName}${response.data.usedAI ? ' using AI' : ''}`,
         });
       }
     } catch (error: any) {
@@ -293,6 +386,7 @@ export default function AnalyzePage() {
 
   const handleKeywordFilter = (keyword: string) => {
     setKeywordFilter(keyword);
+    setCurrentPage(1); // Reset to first page when filtering
 
     if (!keyword.trim()) {
       setFilteredResults(results);
@@ -368,39 +462,6 @@ export default function AnalyzePage() {
                   )}
                 </Button>
               </div>
-
-              <div className="border-t pt-4 mt-4">
-                <div className="space-y-2">
-                  <Label htmlFor="dataset-keywords">Or analyze YouTube Dataset by keywords (optional)</Label>
-                  <Input
-                    id="dataset-keywords"
-                    placeholder="Enter keywords separated by commas (e.g., great, amazing, terrible)"
-                    value={datasetKeywords}
-                    onChange={(e) => setDatasetKeywords(e.target.value)}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Leave empty to analyze random comments, or enter keywords to filter comments
-                  </p>
-                </div>
-                <Button
-                  onClick={handleLoadDataset}
-                  disabled={isAnalyzing}
-                  variant="outline"
-                  className="border-purple-500 text-purple-600 hover:bg-purple-50 mt-3"
-                >
-                  {isAnalyzing ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Loading Dataset...
-                    </>
-                  ) : (
-                    <>
-                      <Upload className="mr-2 h-4 w-4" />
-                      Load YouTube Dataset
-                    </>
-                  )}
-                </Button>
-              </div>
             </TabsContent>
 
             <TabsContent value="csv" className="space-y-4">
@@ -439,7 +500,7 @@ export default function AnalyzePage() {
                         onChange={(e) => setCsvColumn(e.target.value)}
                       />
                       <p className="text-xs text-muted-foreground">
-                        Leave as &quot;text&quot; or enter the column name containing text data
+                        Leave as &quot;text&quot; or enter the column name containing text data (AI will auto-detect if enabled)
                       </p>
                     </div>
 
@@ -534,9 +595,17 @@ export default function AnalyzePage() {
                 onChange={(e) => handleKeywordFilter(e.target.value)}
                 className="w-64"
               />
-              <Button variant="outline">
+              <Button variant="outline" onClick={handleExportPDF}>
+                <FileDown className="mr-2 h-4 w-4" />
+                PDF
+              </Button>
+              <Button variant="outline" onClick={handleExportExcel}>
+                <FileDown className="mr-2 h-4 w-4" />
+                Excel
+              </Button>
+              <Button variant="outline" onClick={handleExportCSV}>
                 <Download className="mr-2 h-4 w-4" />
-                Download PDF Report
+                CSV
               </Button>
             </div>
           </div>
@@ -607,16 +676,28 @@ export default function AnalyzePage() {
             </Card>
           </div>
 
-          {/* Real Data - Keyword Analysis */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Keyword Analysis</CardTitle>
-              <CardDescription>Sentiment by key topics</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <KeywordBarChart results={results} />
-            </CardContent>
-          </Card>
+          {/* Real Data - Keyword Analysis & Word Frequency */}
+          <div className="grid gap-6 md:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle>Keyword Analysis</CardTitle>
+                <CardDescription>Sentiment by key topics</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <KeywordBarChart results={results} />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Word Frequency</CardTitle>
+                <CardDescription>Most common words with sentiment color coding</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <WordFrequencyChart results={results} maxWords={15} />
+              </CardContent>
+            </Card>
+          </div>
 
           {/* Dummy Data - Likert Scale */}
           <Card>
@@ -625,91 +706,92 @@ export default function AnalyzePage() {
               <CardDescription>Distribution of emotional responses on a 1-5 scale</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="grid gap-4 md:grid-cols-5">
+              <div className="grid gap-4 md:grid-cols-3">
                 <div className="text-center p-4 rounded-lg border-2 border-red-500/20 bg-red-50/50 dark:bg-red-950/20">
-                  <div className="text-4xl mb-2">😡</div>
-                  <div className="text-2xl font-bold text-red-600 mb-1">1</div>
-                  <div className="text-sm font-medium text-muted-foreground mb-2">Very Dissatisfied</div>
-                  <div className="text-2xl font-bold text-red-600">45</div>
-                  <div className="text-xs text-muted-foreground mt-1">4.8%</div>
-                </div>
-                <div className="text-center p-4 rounded-lg border-2 border-orange-500/20 bg-orange-50/50 dark:bg-orange-950/20">
-                  <div className="text-4xl mb-2">😞</div>
-                  <div className="text-2xl font-bold text-orange-600 mb-1">2</div>
-                  <div className="text-sm font-medium text-muted-foreground mb-2">Dissatisfied</div>
-                  <div className="text-2xl font-bold text-orange-600">78</div>
-                  <div className="text-xs text-muted-foreground mt-1">8.3%</div>
+                  <div className="text-4xl mb-2">😠</div>
+                  <div className="text-2xl font-bold text-red-600 mb-1">Negative</div>
+                  <div className="text-sm font-medium text-muted-foreground mb-2">Unhappy/Dissatisfied</div>
+                  <div className="text-2xl font-bold text-red-600">{statistics.negative}</div>
+                  <div className="text-xs text-muted-foreground mt-1">{statistics.negativePercentage.toFixed(1)}%</div>
                 </div>
                 <div className="text-center p-4 rounded-lg border-2 border-gray-500/20 bg-gray-50/50 dark:bg-gray-950/20">
                   <div className="text-4xl mb-2">😐</div>
-                  <div className="text-2xl font-bold text-gray-600 mb-1">3</div>
-                  <div className="text-sm font-medium text-muted-foreground mb-2">Neutral</div>
-                  <div className="text-2xl font-bold text-gray-600">139</div>
-                  <div className="text-xs text-muted-foreground mt-1">14.8%</div>
-                </div>
-                <div className="text-center p-4 rounded-lg border-2 border-blue-500/20 bg-blue-50/50 dark:bg-blue-950/20">
-                  <div className="text-4xl mb-2">😊</div>
-                  <div className="text-2xl font-bold text-blue-600 mb-1">4</div>
-                  <div className="text-sm font-medium text-muted-foreground mb-2">Satisfied</div>
-                  <div className="text-2xl font-bold text-blue-600">312</div>
-                  <div className="text-xs text-muted-foreground mt-1">33.2%</div>
+                  <div className="text-2xl font-bold text-gray-600 mb-1">Neutral</div>
+                  <div className="text-sm font-medium text-muted-foreground mb-2">Indifferent/Okay</div>
+                  <div className="text-2xl font-bold text-gray-600">{statistics.neutral}</div>
+                  <div className="text-xs text-muted-foreground mt-1">{statistics.neutralPercentage.toFixed(1)}%</div>
                 </div>
                 <div className="text-center p-4 rounded-lg border-2 border-green-500/20 bg-green-50/50 dark:bg-green-950/20">
-                  <div className="text-4xl mb-2">😄</div>
-                  <div className="text-2xl font-bold text-green-600 mb-1">5</div>
-                  <div className="text-sm font-medium text-muted-foreground mb-2">Very Satisfied</div>
-                  <div className="text-2xl font-bold text-green-600">366</div>
-                  <div className="text-xs text-muted-foreground mt-1">39.0%</div>
+                  <div className="text-4xl mb-2">😊</div>
+                  <div className="text-2xl font-bold text-green-600 mb-1">Positive</div>
+                  <div className="text-sm font-medium text-muted-foreground mb-2">Happy/Satisfied</div>
+                  <div className="text-2xl font-bold text-green-600">{statistics.positive}</div>
+                  <div className="text-xs text-muted-foreground mt-1">{statistics.positivePercentage.toFixed(1)}%</div>
                 </div>
               </div>
               <div className="pt-4">
-                <LikertScaleChart />
+                <LikertScaleChart
+                  positive={statistics.positive}
+                  negative={statistics.negative}
+                  neutral={statistics.neutral}
+                />
               </div>
               <div className="grid gap-4 md:grid-cols-3 pt-4 border-t">
                 <div className="text-center">
-                  <div className="text-sm text-muted-foreground mb-1">Average Score</div>
-                  <div className="text-2xl font-bold">3.94</div>
+                  <div className="text-sm text-muted-foreground mb-1">Average Confidence</div>
+                  <div className="text-2xl font-bold">{(statistics.averageScore * 100).toFixed(1)}%</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-sm text-muted-foreground mb-1">Total Responses</div>
-                  <div className="text-2xl font-bold">940</div>
+                  <div className="text-sm text-muted-foreground mb-1">Total Analyzed</div>
+                  <div className="text-2xl font-bold">{statistics.total}</div>
                 </div>
                 <div className="text-center">
                   <div className="text-sm text-muted-foreground mb-1">Satisfaction Rate</div>
-                  <div className="text-2xl font-bold text-green-600">72.1%</div>
-                  <div className="text-xs text-muted-foreground">(Scale 4-5)</div>
+                  <div className="text-2xl font-bold text-green-600">{statistics.positivePercentage.toFixed(1)}%</div>
+                  <div className="text-xs text-muted-foreground">(Positive)</div>
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          {/* Dummy Data - AI Summary */}
+          {/* Real AI Summary from OpenAI */}
           <Card>
             <CardHeader>
-              <CardTitle>AI Summary</CardTitle>
-              <CardDescription>Key insights from your data</CardDescription>
+              <CardTitle className="flex items-center">
+                <Sparkles className="mr-2 h-5 w-5 text-blue-600" />
+                AI Summary
+              </CardTitle>
+              <CardDescription>
+                {aiInsights ? 'AI-powered insights and recommendations' : 'Key insights from your data'}
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="p-4 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-900">
-                <p className="text-sm">
-                  Overall sentiment is <span className="font-bold text-green-600">
-                    {statistics.positivePercentage > 50 ? 'strongly positive' : statistics.negativePercentage > 50 ? 'strongly negative' : 'mixed'}
-                  </span> with {statistics.positivePercentage.toFixed(1)}% positive mentions.
-                  The analysis is based on real-time AI sentiment detection from HuggingFace.
-                </p>
-              </div>
-              <div className="p-4 bg-yellow-50 dark:bg-yellow-950/30 rounded-lg border border-yellow-200 dark:border-yellow-900">
-                <p className="text-sm">
-                  Analyzed <span className="font-semibold">{statistics.total} text(s)</span> with
-                  an average confidence score of <span className="font-semibold">{(statistics.averageScore * 100).toFixed(1)}%</span>.
-                </p>
-              </div>
-              <div className="p-4 bg-green-50 dark:bg-green-950/30 rounded-lg border border-green-200 dark:border-green-900">
-                <p className="text-sm">
-                  The sentiment analysis uses advanced multilingual AI model capable of detecting
-                  sentiment in <span className="font-bold">multiple languages</span> including English, Indonesian, and more.
-                </p>
-              </div>
+              {aiInsights ? (
+                <div className="p-4 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-900">
+                  <p className="text-sm leading-relaxed whitespace-pre-line">{aiInsights}</p>
+                </div>
+              ) : (
+                <>
+                  <div className="p-4 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-900">
+                    <p className="text-sm">
+                      Overall sentiment is <span className="font-bold text-green-600">
+                        {statistics.positivePercentage > 50 ? 'strongly positive' : statistics.negativePercentage > 50 ? 'strongly negative' : 'mixed'}
+                      </span> with {statistics.positivePercentage.toFixed(1)}% positive mentions.
+                    </p>
+                  </div>
+                  <div className="p-4 bg-yellow-50 dark:bg-yellow-950/30 rounded-lg border border-yellow-200 dark:border-yellow-900">
+                    <p className="text-sm">
+                      Analyzed <span className="font-semibold">{statistics.total} text(s)</span> with
+                      an average confidence score of <span className="font-semibold">{(statistics.averageScore * 100).toFixed(1)}%</span>.
+                    </p>
+                  </div>
+                  <div className="p-4 bg-green-50 dark:bg-green-950/30 rounded-lg border border-green-200 dark:border-green-900">
+                    <p className="text-sm text-muted-foreground">
+                      💡 Tip: Upload CSV or Image files to get AI-powered deep insights from OpenAI GPT-4
+                    </p>
+                  </div>
+                </>
+              )}
             </CardContent>
           </Card>
 
@@ -734,10 +816,12 @@ export default function AnalyzePage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredResults.map((result, index) => (
+                  {filteredResults
+                    .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+                    .map((result, index) => (
                     <TableRow key={index}>
                       <TableCell className="font-mono text-sm text-muted-foreground">
-                        {index + 1}
+                        {(currentPage - 1) * itemsPerPage + index + 1}
                       </TableCell>
                       <TableCell className="font-medium max-w-md">
                         {result.text}
@@ -779,6 +863,60 @@ export default function AnalyzePage() {
                   ))}
                 </TableBody>
               </Table>
+
+              {/* Pagination */}
+              {filteredResults.length > itemsPerPage && (
+                <div className="flex items-center justify-between pt-4 mt-4 border-t">
+                  <div className="text-sm text-muted-foreground">
+                    Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, filteredResults.length)} of {filteredResults.length} results
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                      disabled={currentPage === 1}
+                    >
+                      Previous
+                    </Button>
+                    <div className="flex items-center gap-1">
+                      {Array.from({ length: Math.min(5, Math.ceil(filteredResults.length / itemsPerPage)) }, (_, i) => {
+                        const totalPages = Math.ceil(filteredResults.length / itemsPerPage);
+                        let pageNum;
+                        if (totalPages <= 5) {
+                          pageNum = i + 1;
+                        } else if (currentPage <= 3) {
+                          pageNum = i + 1;
+                        } else if (currentPage >= totalPages - 2) {
+                          pageNum = totalPages - 4 + i;
+                        } else {
+                          pageNum = currentPage - 2 + i;
+                        }
+
+                        return (
+                          <Button
+                            key={pageNum}
+                            variant={currentPage === pageNum ? 'default' : 'outline'}
+                            size="sm"
+                            onClick={() => setCurrentPage(pageNum)}
+                            className="w-10"
+                          >
+                            {pageNum}
+                          </Button>
+                        );
+                      })}
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(prev => Math.min(Math.ceil(filteredResults.length / itemsPerPage), prev + 1))}
+                      disabled={currentPage === Math.ceil(filteredResults.length / itemsPerPage)}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
