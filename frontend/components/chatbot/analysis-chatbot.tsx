@@ -7,6 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Loader2, Send, Bot, User, Sparkles, X, MessageSquare } from 'lucide-react';
 import { apiClient } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -36,22 +38,24 @@ export function AnalysisChatbot({ results, statistics, aiInsights, analysisId }:
       positive > negative && positive > neutral ? 'positive' :
       negative > positive && negative > neutral ? 'negative' : 'neutral';
 
-    let message = `Hi! I've analyzed your ${total} text(s). Here's a quick summary:\n\n`;
-    message += `📊 **Results:**\n`;
-    message += `• ${positive} Positive (${posPercent}%)\n`;
-    message += `• ${negative} Negative (${negPercent}%)\n`;
-    message += `• ${neutral} Neutral (${neuPercent}%)\n\n`;
-    message += `🎯 **Overall Sentiment:** ${dominantSentiment.charAt(0).toUpperCase() + dominantSentiment.slice(1)}\n\n`;
+    let message = `Hi! I've analyzed your **${total} text(s)**. Here's a quick summary:\n\n`;
+    message += `### 📊 Results\n\n`;
+    message += `- ${positive} Positive (${posPercent}%)\n`;
+    message += `- ${negative} Negative (${negPercent}%)\n`;
+    message += `- ${neutral} Neutral (${neuPercent}%)\n\n`;
+    message += `### 🎯 Overall Sentiment\n\n`;
+    message += `**${dominantSentiment.charAt(0).toUpperCase() + dominantSentiment.slice(1)}**\n\n`;
 
     if (aiInsights) {
-      message += `💡 **AI Insights:**\n${aiInsights.substring(0, 200)}${aiInsights.length > 200 ? '...' : ''}\n\n`;
+      message += `### 💡 AI Insights\n\n`;
+      message += `${aiInsights.substring(0, 200)}${aiInsights.length > 200 ? '...' : ''}\n\n`;
     }
 
-    message += `Feel free to ask me:\n`;
-    message += `• "What are the main positive/negative themes?"\n`;
-    message += `• "What should I improve?"\n`;
-    message += `• "Give me detailed insights"\n`;
-    message += `• Or any other questions about your analysis!`;
+    message += `### 💬 Feel free to ask me:\n\n`;
+    message += `- "What are the main positive/negative themes?"\n`;
+    message += `- "What should I improve?"\n`;
+    message += `- "Give me detailed insights"\n`;
+    message += `- Or any other questions about your analysis!`;
 
     return message;
   };
@@ -264,7 +268,21 @@ export function AnalysisChatbot({ results, statistics, aiInsights, analysisId }:
                   : 'bg-gray-100 dark:bg-gray-900'
               }`}
             >
-              <p className="text-sm whitespace-pre-line leading-relaxed">{message.content}</p>
+              {message.role === 'user' ? (
+                <p className="text-sm whitespace-pre-line leading-relaxed">{message.content}</p>
+              ) : (
+                <div className="prose prose-sm dark:prose-invert max-w-none
+                  prose-p:text-sm prose-p:leading-relaxed prose-p:my-1
+                  prose-ul:my-1 prose-ul:text-sm
+                  prose-li:my-0.5
+                  prose-strong:font-semibold prose-strong:text-gray-900 dark:prose-strong:text-gray-100
+                  prose-headings:text-gray-900 dark:prose-headings:text-gray-100
+                  prose-h1:text-base prose-h1:font-bold prose-h1:mb-2
+                  prose-h2:text-sm prose-h2:font-semibold prose-h2:mb-1 prose-h2:mt-2
+                  prose-h3:text-sm prose-h3:font-medium prose-h3:mb-1">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+                </div>
+              )}
               <p className="text-xs text-muted-foreground mt-1">
                 {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </p>

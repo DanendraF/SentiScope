@@ -27,14 +27,19 @@ class SentimentService {
    */
   private mapSentimentLabel(label: string): string {
     // Map various label formats to our three categories
-    if (label.includes('positive')) {
+    const lowerLabel = label.toLowerCase();
+
+    if (lowerLabel.includes('positive')) {
       return 'positive';
-    } else if (label.includes('negative')) {
+    } else if (lowerLabel.includes('negative')) {
       return 'negative';
-    } else if (label.includes('neutral')) {
+    } else if (lowerLabel.includes('neutral') || lowerLabel.includes('mixed')) {
+      // Map 'mixed' to 'neutral' since mixed sentiment is essentially neutral
       return 'neutral';
     }
+
     // Default to neutral if unknown
+    console.warn(`⚠️ Unknown sentiment label: "${label}", mapping to neutral`);
     return 'neutral';
   }
 

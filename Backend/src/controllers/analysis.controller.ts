@@ -9,6 +9,7 @@ import Papa from 'papaparse';
 import fs from 'fs';
 import Tesseract from 'tesseract.js';
 import OpenAI from 'openai';
+import { supabase } from '../config/database';
 
 /**
  * Analyze single text
@@ -266,7 +267,11 @@ export const deepSentimentAnalysis = async (
         req.user.userId,
         analysisTitle,
         inputType as 'text' | 'batch' | 'keywords' | 'csv',
-        formattedResults
+        formattedResults,
+        undefined, // filePath
+        undefined, // fileUrl
+        undefined, // originalFileName
+        insights // aiInsights
       );
     }
 
@@ -569,6 +574,11 @@ export const analyzeCsvFile = async (
       .filter(text => text && typeof text === 'string' && text.trim().length > 0)
       .map(text => String(text).trim());
 
+    console.log(`📝 Sample texts extracted (first 3):`);
+    texts.slice(0, 3).forEach((text, i) => {
+      console.log(`   ${i + 1}. "${text.substring(0, 100)}${text.length > 100 ? '...' : ''}"`);
+    });
+
     if (texts.length === 0) {
       // Clean up uploaded file
       fs.unlinkSync(req.file.path);
@@ -688,7 +698,8 @@ export const analyzeCsvFile = async (
         results,
         filePath,
         fileUrl,
-        req.file.originalname
+        req.file.originalname,
+        aiInsights // Add AI insights
       );
     }
 
@@ -912,7 +923,8 @@ export const analyzeImageFile = async (
         results,
         filePath,
         fileUrl,
-        req.file.originalname
+        req.file.originalname,
+        aiInsights // Add AI insights
       );
     }
 

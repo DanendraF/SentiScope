@@ -51,7 +51,7 @@ export const fetchAndAnalyzeTokopediaReviews = async (
     const { limit, offset = 0, keywords } = req.body;
 
     // Fetch dataset to ensure we get keyword matches
-    // Default: 500 items (good balance of coverage vs rate limits)
+    // Default: 1000 items (good balance of coverage vs rate limits)
     // Users can specify higher limit if needed, but default is conservative
     const fetchLimit = keywords && keywords.length > 0 ? 1000 : (limit || 1000);
     const items = await datasetService.fetchTokopediaReviewsDataset(fetchLimit, offset);

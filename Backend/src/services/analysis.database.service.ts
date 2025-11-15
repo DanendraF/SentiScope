@@ -15,6 +15,7 @@ export interface Analysis {
   filePath?: string | null;
   fileUrl?: string | null;
   originalFileName?: string | null;
+  aiInsights?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -46,7 +47,8 @@ class AnalysisDatabaseService {
     results: TextAnalysisResult[],
     filePath?: string,
     fileUrl?: string,
-    originalFileName?: string
+    originalFileName?: string,
+    aiInsights?: string
   ): Promise<AnalysisWithItems> {
     try {
       // Calculate statistics
@@ -71,6 +73,7 @@ class AnalysisDatabaseService {
           file_path: filePath || null,
           file_url: fileUrl || null,
           original_file_name: originalFileName || null,
+          ai_insights: aiInsights || null,
         })
         .select()
         .single();
@@ -292,6 +295,7 @@ class AnalysisDatabaseService {
       filePath: row.file_path || null,
       fileUrl: row.file_url || null,
       originalFileName: row.original_file_name || null,
+      aiInsights: row.ai_insights || null,
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at),
     };

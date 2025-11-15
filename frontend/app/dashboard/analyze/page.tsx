@@ -105,10 +105,17 @@ export default function AnalyzePage() {
         const textsToAnalyze = texts.slice(0, 20);
         if (textsToAnalyze.length > 0) {
           console.log('🤖 Using AI Deep Analysis for user input...');
+          // Create descriptive title with first keywords
+          const firstKeywords = keywords.slice(0, 3).join(', ');
+          const analysisTitle = firstKeywords
+            ? `Comment Analysis - ${firstKeywords}`
+            : `Comment Analysis - ${new Date().toLocaleDateString()}`;
+
           const response: any = await apiClient.deepAnalysis(
             textsToAnalyze.length === 1 ? textsToAnalyze[0] : undefined,
             textsToAnalyze.length > 1 ? textsToAnalyze : undefined,
-            true
+            true,
+            analysisTitle
           );
           console.log('✅ AI Analysis Response:', response);
 
@@ -215,7 +222,11 @@ export default function AnalyzePage() {
     console.log('📁 Uploading CSV:', csvFile.name);
 
     try {
-      const response: any = await apiClient.analyzeCsv(csvFile, true, undefined, csvColumn);
+      // Create descriptive title from filename
+      const fileName = csvFile.name.replace(/\.[^/.]+$/, ''); // Remove extension
+      const csvTitle = `CSV Analysis - ${fileName}`;
+
+      const response: any = await apiClient.analyzeCsv(csvFile, true, csvTitle, csvColumn);
       console.log('✅ CSV Response:', response);
 
       if (response.success && response.data) {
@@ -401,7 +412,11 @@ export default function AnalyzePage() {
     console.log('🖼️ Uploading image:', imageFile.name);
 
     try {
-      const response: any = await apiClient.analyzeImage(imageFile, true);
+      // Create descriptive title from filename
+      const fileName = imageFile.name.replace(/\.[^/.]+$/, ''); // Remove extension
+      const imageTitle = `Image Analysis - ${fileName}`;
+
+      const response: any = await apiClient.analyzeImage(imageFile, true, imageTitle);
       console.log('✅ Image Response:', response);
 
       if (response.success && response.data) {

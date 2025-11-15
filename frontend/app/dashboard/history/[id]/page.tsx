@@ -13,13 +13,18 @@ import {
   TrendingDown,
   Minus,
   Download,
-  FileText
+  FileText,
+  Sparkles,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { apiClient } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { SentimentPieChart } from '@/components/charts/sentiment-pie-chart';
 import { SentimentTrendChart } from '@/components/charts/sentiment-trend-chart';
 import { AnalysisChatbot } from '@/components/chatbot/analysis-chatbot';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface AnalysisItem {
   id: string;
@@ -41,6 +46,7 @@ interface AnalysisDetail {
   filePath?: string;
   fileUrl?: string;
   originalFileName?: string;
+  aiInsights?: string | null;
   createdAt: string;
   items: AnalysisItem[];
 }
@@ -52,6 +58,8 @@ export default function AnalysisDetailPage() {
   const [analysis, setAnalysis] = useState<AnalysisDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   useEffect(() => {
     if (params.id) {
@@ -282,38 +290,43 @@ export default function AnalysisDetailPage() {
         <CardHeader>
           <CardTitle>Analysis Results</CardTitle>
           <CardDescription>
-            Detailed sentiment analysis for each text item
+            Showing {Math.min((currentPage - 1) * itemsPerPage + 1, analysis.totalItems)}-{Math.min(currentPage * itemsPerPage, analysis.totalItems)} of {analysis.totalItems} items
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
-            {analysis.items.map((item, index) => (
-              <div
-                key={item.id}
-                className="p-4 rounded-lg border hover:bg-muted/50 transition-colors"
-              >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-xs font-mono text-muted-foreground">
-                        #{index + 1}
-                      </span>
-                      <Badge
-                        variant="outline"
-                        className={getSentimentColor(item.sentimentLabel)}
-                      >
-                        <span className="mr-1">{getSentimentIcon(item.sentimentLabel)}</span>
-                        {item.sentimentLabel}
-                      </Badge>
-                      <span className="text-xs text-muted-foreground">
-                        {(item.confidenceScore * 100).toFixed(1)}% confidence
-                      </span>
+            {analysis.items
+              .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+              .map((item, index) => {
+                const globalIndex = (currentPage - 1) * itemsPerPage + index;
+                return (
+                  <div
+                    key={item.id}
+                    className="p-4 rounded-lg border hover:bg-muted/50 transition-colors"
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-xs font-mono text-muted-foreground">
+                            #{globalIndex + 1}
+                          </span>
+                          <Badge
+                            variant="outline"
+                            className={getSentimentColor(item.sentimentLabel)}
+                          >
+                            <span className="mr-1">{getSentimentIcon(item.sentimentLabel)}</span>
+                            {item.sentimentLabel}
+                          </Badge>
+                          <span className="text-xs text-muted-foreground">
+                            {(item.confidenceScore * 100).toFixed(1)}% confidence
+                          </span>
+                        </div>
+                        <p className="text-sm leading-relaxed">{item.textContent}</p>
+                      </div>
                     </div>
-                    <p className="text-sm leading-relaxed">{item.textContent}</p>
                   </div>
-                </div>
-              </div>
-            ))}
+                );
+              })}
           </div>
 
           {analysis.items.length === 0 && (
@@ -321,8 +334,67 @@ export default function AnalysisDetailPage() {
               <p className="text-muted-foreground">No analysis items found</p>
             </div>
           )}
+
+          {/* Pagination Controls */}
+          {analysis.items.length > itemsPerPage && (
+            <div className="flex items-center justify-between mt-6 pt-4 border-t">
+              <div className="text-sm text-muted-foreground">
+                Page {currentPage} of {Math.ceil(analysis.items.length / itemsPerPage)}
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                >
+                  <ChevronLeft className="h-4 w-4 mr-1" />
+                  Previous
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(prev => Math.min(Math.ceil(analysis.items.length / itemsPerPage), prev + 1))}
+                  disabled={currentPage === Math.ceil(analysis.items.length / itemsPerPage)}
+                >
+                  Next
+                  <ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
+
+      {/* AI Summary */}
+      {analysis.aiInsights && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center">
+              <Sparkles className="mr-2 h-5 w-5 text-blue-600" />
+              AI Summary
+            </CardTitle>
+            <CardDescription>
+              AI-powered insights and recommendations
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="p-4 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-900">
+              <div className="prose prose-sm dark:prose-invert max-w-none
+                prose-headings:text-blue-900 dark:prose-headings:text-blue-100
+                prose-h1:text-xl prose-h1:font-bold prose-h1:mb-3
+                prose-h2:text-lg prose-h2:font-semibold prose-h2:mb-2 prose-h2:mt-4
+                prose-h3:text-base prose-h3:font-medium prose-h3:mb-2
+                prose-p:text-sm prose-p:leading-relaxed prose-p:my-2
+                prose-ul:my-2 prose-ul:text-sm
+                prose-li:my-1
+                prose-strong:text-blue-800 dark:prose-strong:text-blue-200 prose-strong:font-semibold">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{analysis.aiInsights}</ReactMarkdown>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Chatbot */}
       <AnalysisChatbot
@@ -345,7 +417,7 @@ export default function AnalysisDetailPage() {
           neutralPercentage: (analysis.neutralCount / analysis.totalItems) * 100,
           averageScore: analysis.averageScore
         }}
-        aiInsights={null}
+        aiInsights={analysis.aiInsights}
         analysisId={analysis.id}
       />
     </div>
