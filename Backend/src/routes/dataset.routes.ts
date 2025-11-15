@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { authenticateToken } from '../middleware/auth';
 import {
-  fetchYoutubeComments,
-  fetchAndAnalyzeYoutubeComments,
+  fetchTokopediaReviews,
+  fetchAndAnalyzeTokopediaReviews,
   fetchDataset,
   getDatasetInfo,
 } from '../controllers/dataset.controller';
@@ -10,22 +10,22 @@ import {
 const router = Router();
 
 /**
- * @route   GET /api/datasets/youtube-comments
- * @desc    Fetch YouTube comment sentiment dataset from HuggingFace
+ * @route   GET /api/datasets/tokopedia-reviews
+ * @desc    Fetch Tokopedia product reviews dataset from HuggingFace
  * @access  Private
  * @query   limit (optional, default: 100, max: 500)
  * @query   offset (optional, default: 0)
  */
-router.get('/youtube-comments', authenticateToken, fetchYoutubeComments);
+router.get('/tokopedia-reviews', authenticateToken, fetchTokopediaReviews);
 
 /**
- * @route   POST /api/datasets/youtube-comments/analyze
- * @desc    Fetch and analyze YouTube comments with our sentiment model
+ * @route   POST /api/datasets/tokopedia-reviews/analyze
+ * @desc    Fetch and analyze Tokopedia reviews with our sentiment model
  * @access  Private
  * @body    { limit?, offset?, keywords? }
- *          keywords: string | string[] - Filter comments by keywords
+ *          keywords: string | string[] - Filter reviews by keywords
  */
-router.post('/youtube-comments/analyze', authenticateToken, fetchAndAnalyzeYoutubeComments);
+router.post('/tokopedia-reviews/analyze', authenticateToken, fetchAndAnalyzeTokopediaReviews);
 
 /**
  * @route   POST /api/datasets/fetch

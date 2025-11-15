@@ -7,6 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Upload, FileText, Image as ImageIcon, Sparkles, Download, Loader2, FileDown } from 'lucide-react';
 import { SentimentPieChart } from '@/components/charts/sentiment-pie-chart';
 import { SentimentTrendChart } from '@/components/charts/sentiment-trend-chart';
@@ -24,6 +25,9 @@ import {
 } from '@/components/ui/table';
 import { apiClient } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
+import { AnalysisChatbot } from '@/components/chatbot/analysis-chatbot';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface AnalysisResult {
   text: string;
@@ -36,6 +40,7 @@ interface AnalysisResult {
   keyPhrases?: string[];
   username?: string;
   timestamp?: string;
+  productName?: string;
 }
 
 interface Statistics {
@@ -54,6 +59,7 @@ export default function AnalyzePage() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const [textInput, setTextInput] = useState('');
+  const [inputType, setInputType] = useState<'comment' | 'product'>('comment');
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvColumn, setCsvColumn] = useState('text');
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -62,6 +68,7 @@ export default function AnalyzePage() {
   const [statistics, setStatistics] = useState<Statistics | null>(null);
   const [keywordFilter, setKeywordFilter] = useState('');
   const [aiInsights, setAiInsights] = useState<string | null>(null);
+  const [analysisId, setAnalysisId] = useState<string | undefined>(undefined);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
@@ -69,53 +76,75 @@ export default function AnalyzePage() {
     if (!textInput.trim()) {
       toast({
         title: 'Error',
-        description: 'Please enter text to analyze',
+        description: inputType === 'comment' ? 'Please enter text to analyze' : 'Please enter product name to search',
         variant: 'destructive',
       });
       return;
     }
 
     setIsAnalyzing(true);
-    console.log('🔍 Analyzing text and searching dataset:', textInput);
+    const modeLabel = inputType === 'comment' ? 'Analyzing comments' : 'Searching products';
+    console.log(`🔍 ${modeLabel}:`, textInput);
 
     try {
-      // Split by newlines for batch analysis
-      const texts = textInput.split('\n').filter(t => t.trim());
-
-      // Extract keywords from user input for dataset search
-      const keywords = texts.flatMap(text =>
-        text.toLowerCase()
-          .split(/\s+/)
-          .filter(word => word.length > 3) // Only words longer than 3 chars
-      );
-
       let allResults: AnalysisResult[] = [];
       let insights: string | null = null;
 
-      // 1. Analyze user's text input with AI (limit to 20 for cost control)
-      const textsToAnalyze = texts.slice(0, 20);
-      if (textsToAnalyze.length > 0) {
-        console.log('🤖 Using AI Deep Analysis for user input...');
-        const response: any = await apiClient.deepAnalysis(
-          textsToAnalyze.length === 1 ? textsToAnalyze[0] : undefined,
-          textsToAnalyze.length > 1 ? textsToAnalyze : undefined,
-          true
+      if (inputType === 'comment') {
+        // MODE 1: Analyze user comments/reviews directly
+        const texts = textInput.split('\n').filter(t => t.trim());
+
+        // Extract keywords from user input for dataset search
+        const keywords = texts.flatMap(text =>
+          text.toLowerCase()
+            .split(/\s+/)
+            .filter(word => word.length > 3) // Only words longer than 3 chars
         );
-        console.log('✅ AI Analysis Response:', response);
 
-        if (response.success && response.data) {
-          allResults.push(...response.data.results);
-          insights = response.data.insights || null;
+        // 1. Analyze user's text input with AI (limit to 20 for cost control)
+        const textsToAnalyze = texts.slice(0, 20);
+        if (textsToAnalyze.length > 0) {
+          console.log('🤖 Using AI Deep Analysis for user input...');
+          const response: any = await apiClient.deepAnalysis(
+            textsToAnalyze.length === 1 ? textsToAnalyze[0] : undefined,
+            textsToAnalyze.length > 1 ? textsToAnalyze : undefined,
+            true
+          );
+          console.log('✅ AI Analysis Response:', response);
+
+          if (response.success && response.data) {
+            allResults.push(...response.data.results);
+            insights = response.data.insights || null;
+            // Save analysisId if available
+            if (response.data.analysisId) {
+              setAnalysisId(response.data.analysisId);
+            }
+          }
         }
-      }
 
-      // 2. Search and analyze dataset with keywords
-      if (keywords.length > 0) {
-        console.log('🔍 Searching dataset with keywords:', keywords.slice(0, 5));
-        const datasetResponse: any = await apiClient.analyzeYoutubeComments(
-          50,
+        // 2. Search and analyze dataset with keywords
+        if (keywords.length > 0) {
+          console.log('🔍 Searching dataset with keywords:', keywords.slice(0, 5));
+          const datasetResponse: any = await apiClient.analyzeTokopediaReviews(
+            undefined, // No limit - analyze ALL matching items
+            0,
+            keywords.slice(0, 5) // Limit to first 5 keywords
+          );
+          console.log('✅ Dataset Response:', datasetResponse);
+
+          if (datasetResponse.success && datasetResponse.data) {
+            allResults.push(...datasetResponse.data.results);
+          }
+        }
+      } else {
+        // MODE 2: Search by product name in dataset
+        const productNames = textInput.split('\n').filter(t => t.trim());
+        console.log('🛍️ Searching for products:', productNames);
+
+        const datasetResponse: any = await apiClient.analyzeTokopediaReviews(
+          undefined, // No limit - analyze ALL reviews for the product
           0,
-          keywords.slice(0, 5) // Limit to first 5 keywords
+          productNames // Use product names as keywords
         );
         console.log('✅ Dataset Response:', datasetResponse);
 
@@ -150,9 +179,13 @@ export default function AnalyzePage() {
         setAiInsights(insights);
         setShowResults(true);
 
+        const successMsg = inputType === 'comment'
+          ? `Analyzed ${allResults.length} text(s)${insights ? ' with AI insights' : ''}`
+          : `Found ${allResults.length} reviews for the product(s)`;
+
         toast({
           title: insights ? 'AI Analysis Complete' : 'Analysis Complete',
-          description: `Analyzed ${textsToAnalyze.length} input text(s)${insights ? ' with AI' : ''} + ${allResults.length - textsToAnalyze.length} dataset matches`,
+          description: successMsg,
         });
       }
     } catch (error: any) {
@@ -456,10 +489,44 @@ export default function AnalyzePage() {
 
             <TabsContent value="text" className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="text-input">Enter text or keywords</Label>
+                <Label htmlFor="input-type">Input Type</Label>
+                <Select value={inputType} onValueChange={(value: 'comment' | 'product') => setInputType(value)}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select input type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="comment">
+                      <div className="flex items-center gap-2">
+                        <FileText className="h-4 w-4" />
+                        <span>Comment / Review</span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="product">
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="h-4 w-4" />
+                        <span>Product Name</span>
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {inputType === 'comment'
+                    ? 'Analyze sentiment of your own comments/reviews with AI'
+                    : 'Search and analyze reviews by product name'}
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="text-input">
+                  {inputType === 'comment' ? 'Enter Comments/Reviews' : 'Enter Product Name(s)'}
+                </Label>
                 <Textarea
                   id="text-input"
-                  placeholder="Type or paste your text here... (e.g., customer reviews, social media posts, feedback)&#10;&#10;💡 Tip: Enter one text per line for batch analysis"
+                  placeholder={
+                    inputType === 'comment'
+                      ? "Type or paste your text here... (e.g., customer reviews, social media posts, feedback)\n\n💡 Tip: Enter one text per line for batch analysis"
+                      : "Enter product name to search...\n(e.g., Sepatu Nike, Tas Wanita)\n\n💡 Tip: Enter one product per line to search multiple products"
+                  }
                   className="min-h-[200px]"
                   value={textInput}
                   onChange={(e) => setTextInput(e.target.value)}
@@ -474,12 +541,12 @@ export default function AnalyzePage() {
                   {isAnalyzing ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Analyzing...
+                      {inputType === 'comment' ? 'Analyzing...' : 'Searching...'}
                     </>
                   ) : (
                     <>
                       <Sparkles className="mr-2 h-4 w-4" />
-                      Analyze Sentiment
+                      {inputType === 'comment' ? 'Analyze Sentiment' : 'Search Product Reviews'}
                     </>
                   )}
                 </Button>
@@ -790,7 +857,17 @@ export default function AnalyzePage() {
             <CardContent className="space-y-3">
               {aiInsights ? (
                 <div className="p-4 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-900">
-                  <p className="text-sm leading-relaxed whitespace-pre-line">{aiInsights}</p>
+                  <div className="prose prose-sm dark:prose-invert max-w-none
+                    prose-headings:text-blue-900 dark:prose-headings:text-blue-100
+                    prose-h1:text-xl prose-h1:font-bold prose-h1:mb-3
+                    prose-h2:text-lg prose-h2:font-semibold prose-h2:mb-2 prose-h2:mt-4
+                    prose-h3:text-base prose-h3:font-medium prose-h3:mb-2
+                    prose-p:text-sm prose-p:leading-relaxed prose-p:my-2
+                    prose-ul:my-2 prose-ul:text-sm
+                    prose-li:my-1
+                    prose-strong:text-blue-800 dark:prose-strong:text-blue-200 prose-strong:font-semibold">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{aiInsights}</ReactMarkdown>
+                  </div>
                 </div>
               ) : (
                 <>
@@ -832,7 +909,7 @@ export default function AnalyzePage() {
                   <TableRow>
                     <TableHead className="w-12">#</TableHead>
                     <TableHead>Text</TableHead>
-                    <TableHead>User/Time</TableHead>
+                    <TableHead>Product</TableHead>
                     <TableHead>Sentiment</TableHead>
                     <TableHead>Keywords</TableHead>
                     <TableHead className="text-right">Confidence</TableHead>
@@ -849,8 +926,12 @@ export default function AnalyzePage() {
                       <TableCell className="font-medium max-w-md">
                         {result.text}
                       </TableCell>
-                      <TableCell className="text-sm">
-                        {result.username || result.timestamp ? (
+                      <TableCell className="text-sm max-w-xs">
+                        {result.productName ? (
+                          <div className="font-medium text-purple-600 dark:text-purple-400 truncate" title={result.productName}>
+                            {result.productName}
+                          </div>
+                        ) : result.username || result.timestamp ? (
                           <div className="space-y-1">
                             {result.username && (
                               <div className="font-medium text-blue-600">@{result.username}</div>
@@ -957,6 +1038,16 @@ export default function AnalyzePage() {
             </CardContent>
           </Card>
         </div>
+      )}
+
+      {/* Chatbot - only show when results are available */}
+      {showResults && statistics && (
+        <AnalysisChatbot
+          results={results}
+          statistics={statistics}
+          aiInsights={aiInsights}
+          analysisId={analysisId}
+        />
       )}
     </div>
   );

@@ -11,6 +11,8 @@ import {
   getAnalysisHistory,
   getAnalysisById,
   deleteAnalysis,
+  chatWithAnalysis,
+  getChatHistory,
 } from '../controllers/analysis.controller';
 import { authenticateToken } from '../middleware/auth';
 import { validate } from '../middleware/validate';
@@ -149,6 +151,20 @@ router.delete(
   '/:id',
   authenticateToken,
   deleteAnalysis
+);
+
+// POST /api/analysis/chat - Chat with AI about analysis results
+router.post(
+  '/chat',
+  authenticateToken,
+  chatWithAnalysis
+);
+
+// GET /api/analysis/:id/chat-history - Get chat history for an analysis
+router.get(
+  '/:id/chat-history',
+  authenticateToken,
+  getChatHistory
 );
 
 export default router;

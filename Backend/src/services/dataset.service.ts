@@ -5,9 +5,10 @@ const HUGGINGFACE_DATASETS_API = 'https://datasets-server.huggingface.co/rows';
 
 interface HuggingFaceDatasetRow {
   row: {
-    // YouTube comment dataset fields
-    CommentText?: string;
-    Sentiment?: string;
+    // Tokopedia product review dataset fields
+    review?: string;
+    rating?: number;
+    product_name?: string;
     // Generic fields
     text?: string;
     comment?: string;
@@ -23,6 +24,7 @@ interface DatasetItem {
   text: string;
   originalLabel: string | number;
   sentiment?: string;
+  productName?: string;
 }
 
 /**
@@ -31,10 +33,10 @@ interface DatasetItem {
  */
 class DatasetService {
   /**
-   * Fetch YouTube Comment Sentiment dataset from HuggingFace
-   * Dataset: AmaanP314/youtube-comment-sentiment
+   * Fetch Tokopedia Product Reviews dataset from HuggingFace
+   * Dataset: farhan999/tokopedia-product-reviews
    */
-  async fetchYoutubeCommentDataset(limit: number = 100, offset: number = 0): Promise<DatasetItem[]> {
+  async fetchTokopediaReviewsDataset(limit: number = 100, offset: number = 0): Promise<DatasetItem[]> {
     try {
       // HuggingFace API has max length of 100 per request
       // If we need more, we'll make multiple requests
@@ -49,7 +51,7 @@ class DatasetService {
 
         const response = await axios.get(HUGGINGFACE_DATASETS_API, {
           params: {
-            dataset: 'AmaanP314/youtube-comment-sentiment',
+            dataset: 'farhamu/tokopedia-product-reviews-2019',
             config: 'default',
             split: 'train',
             offset: currentOffset,
@@ -66,40 +68,52 @@ class DatasetService {
         const items: DatasetItem[] = response.data.rows.map((item: HuggingFaceDatasetRow) => {
           const row = item.row;
 
-          // Extract text (YouTube dataset uses CommentText field)
-          const text = row.CommentText || row.text || row.comment || row.content || row.sentence || '';
+          // Extract text (Tokopedia dataset uses 'review' field)
+          const text = row.review || row.text || row.comment || row.content || '';
 
-          // Extract label (YouTube dataset uses Sentiment field with string values)
-          const label = row.Sentiment || (row.label !== undefined ? row.label : (row.sentiment || 'unknown'));
+          // Extract rating (Tokopedia dataset uses 'rating' field - 1-5 stars)
+          const rating = row.rating || (row.label !== undefined ? row.label : 0);
 
-          // Map labels to sentiment strings
-          let sentiment: string | undefined;
-          if (typeof label === 'number') {
-            // Common mapping: 0=negative, 1=neutral, 2=positive
-            if (label === 0) sentiment = 'negative';
-            else if (label === 1) sentiment = 'neutral';
-            else if (label === 2) sentiment = 'positive';
-          } else if (typeof label === 'string') {
-            sentiment = label.toLowerCase();
+          // Extract product name
+          const productName = row.product_name || undefined;
+
+          // Map rating to sentiment strings
+          // Rating 1-2: negative, Rating 3: neutral, Rating 4-5: positive
+          let sentiment: string;
+          if (typeof rating === 'number') {
+            if (rating <= 2) sentiment = 'negative';
+            else if (rating === 3) sentiment = 'neutral';
+            else sentiment = 'positive';
+          } else {
+            sentiment = 'neutral';
           }
 
           return {
             text: text.toString(),
-            originalLabel: label,
+            originalLabel: rating,
             sentiment,
+            productName,
           };
         });
 
         const validItems = items.filter(item => item.text.trim().length > 0);
         allItems.push(...validItems);
 
+        console.log(`📦 Fetched batch: ${allItems.length}/${limit} items`);
+
         // If we got fewer items than requested, we've reached the end
         if (response.data.rows.length < batchSize) {
+          console.log('✅ Reached end of dataset');
           break;
         }
 
         remainingLimit -= batchSize;
         currentOffset += batchSize;
+
+        // Add delay between requests to avoid rate limiting (HuggingFace has rate limits)
+        if (remainingLimit > 0) {
+          await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay
+        }
       }
 
       return allItems;
@@ -144,18 +158,22 @@ class DatasetService {
       const items: DatasetItem[] = response.data.rows.map((item: HuggingFaceDatasetRow) => {
         const row = item.row;
 
-        // Try to find text field (include CommentText for YouTube dataset)
-        const text = row.CommentText || row.text || row.comment || row.content || row.sentence || row.review || '';
+        // Try to find text field (prioritize 'review' for Tokopedia dataset)
+        const text = row.review || row.text || row.comment || row.content || row.sentence || '';
 
-        // Try to find label field (include Sentiment for YouTube dataset)
-        const label = row.Sentiment || (row.label !== undefined ? row.label : (row.sentiment || row.rating || 'unknown'));
+        // Try to find label/rating field
+        const label = row.rating || (row.label !== undefined ? row.label : (row.sentiment || 'unknown'));
 
-        // Map numeric labels to sentiment strings if needed
+        // Extract product name if available
+        const productName = row.product_name || undefined;
+
+        // Map labels to sentiment strings
         let sentiment: string | undefined;
         if (typeof label === 'number') {
-          if (label === 0) sentiment = 'negative';
-          else if (label === 1) sentiment = 'neutral';
-          else if (label === 2) sentiment = 'positive';
+          // For rating systems (1-5 stars like Tokopedia)
+          if (label <= 2) sentiment = 'negative';
+          else if (label === 3) sentiment = 'neutral';
+          else if (label >= 4) sentiment = 'positive';
         } else if (typeof label === 'string') {
           const lowerLabel = label.toLowerCase();
           if (lowerLabel.includes('positive')) sentiment = 'positive';
@@ -167,6 +185,7 @@ class DatasetService {
           text: text.toString(),
           originalLabel: label,
           sentiment,
+          productName,
         };
       });
 

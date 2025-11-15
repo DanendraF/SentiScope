@@ -5,10 +5,10 @@ import { sentimentService } from '../services/sentiment.service';
 import { AppError } from '../utils/AppError';
 
 /**
- * Fetch YouTube comment sentiment dataset
- * GET /api/datasets/youtube-comments
+ * Fetch Tokopedia product reviews dataset
+ * GET /api/datasets/tokopedia-reviews
  */
-export const fetchYoutubeComments = async (
+export const fetchTokopediaReviews = async (
   req: AuthRequest,
   res: Response,
   next: NextFunction
@@ -21,11 +21,11 @@ export const fetchYoutubeComments = async (
       throw new AppError('Maximum limit is 500 items', 400);
     }
 
-    const items = await datasetService.fetchYoutubeCommentDataset(limit, offset);
+    const items = await datasetService.fetchTokopediaReviewsDataset(limit, offset);
 
     res.status(200).json({
       success: true,
-      message: `Fetched ${items.length} items from YouTube comment dataset`,
+      message: `Fetched ${items.length} items from Tokopedia reviews dataset`,
       data: {
         items,
         count: items.length,
@@ -39,24 +39,22 @@ export const fetchYoutubeComments = async (
 };
 
 /**
- * Fetch and analyze YouTube comments with our model
- * POST /api/datasets/youtube-comments/analyze
+ * Fetch and analyze Tokopedia reviews with our model
+ * POST /api/datasets/tokopedia-reviews/analyze
  */
-export const fetchAndAnalyzeYoutubeComments = async (
+export const fetchAndAnalyzeTokopediaReviews = async (
   req: AuthRequest,
   res: Response,
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { limit = 50, offset = 0, keywords } = req.body;
+    const { limit, offset = 0, keywords } = req.body;
 
-    if (limit > 100) {
-      throw new AppError('Maximum limit is 100 items for analysis', 400);
-    }
-
-    // Fetch larger dataset if keywords are provided (need more data to filter)
-    const fetchLimit = keywords && keywords.length > 0 ? Math.min(limit * 10, 500) : limit;
-    const items = await datasetService.fetchYoutubeCommentDataset(fetchLimit, offset);
+    // Fetch dataset to ensure we get keyword matches
+    // Default: 500 items (good balance of coverage vs rate limits)
+    // Users can specify higher limit if needed, but default is conservative
+    const fetchLimit = keywords && keywords.length > 0 ? 1000 : (limit || 1000);
+    const items = await datasetService.fetchTokopediaReviewsDataset(fetchLimit, offset);
     console.log('📊 Fetched dataset items:', items.length);
 
     if (items.length === 0) {
@@ -69,16 +67,31 @@ export const fetchAndAnalyzeYoutubeComments = async (
       const keywordArray = Array.isArray(keywords) ? keywords : [keywords];
       filteredItems = items.filter(item => {
         const textLower = item.text.toLowerCase();
-        return keywordArray.some((keyword: string) => textLower.includes(keyword.toLowerCase()));
+        const productNameLower = item.productName ? item.productName.toLowerCase() : '';
+
+        // Search in both text review AND product name
+        return keywordArray.some((keyword: string) => {
+          const keywordLower = keyword.toLowerCase();
+          return textLower.includes(keywordLower) || productNameLower.includes(keywordLower);
+        });
       });
       console.log(`🔍 Filtered by keywords [${keywordArray.join(', ')}]:`, filteredItems.length, 'items');
 
       if (filteredItems.length === 0) {
-        throw new AppError(`No comments found containing keywords: ${keywordArray.join(', ')}`, 404);
+        throw new AppError(`No reviews found containing keywords: ${keywordArray.join(', ')}`, 404);
       }
 
-      // Limit filtered results
-      filteredItems = filteredItems.slice(0, limit);
+      // Apply limit only if specified, otherwise cap at 100 (sentiment service limit)
+      if (limit) {
+        filteredItems = filteredItems.slice(0, limit);
+      } else if (filteredItems.length > 100) {
+        console.log(`⚠️ Filtered results (${filteredItems.length}) exceed max batch size, limiting to 100`);
+        filteredItems = filteredItems.slice(0, 100);
+      }
+    } else if (!limit && filteredItems.length > 100) {
+      // No keywords, no limit specified - cap at 100 items
+      console.log(`⚠️ Dataset items (${filteredItems.length}) exceed max batch size, limiting to 100`);
+      filteredItems = filteredItems.slice(0, 100);
     }
 
     // Extract texts to analyze
@@ -89,23 +102,35 @@ export const fetchAndAnalyzeYoutubeComments = async (
       throw new AppError('No valid text found in dataset items', 400);
     }
 
+    // Final safety check - sentiment service has 100 texts limit
+    if (texts.length > 100) {
+      throw new AppError('Maximum 100 texts can be analyzed per request', 400);
+    }
+
     // Analyze with our sentiment model
-    const results = await sentimentService.analyzeBatchTexts(texts);
-    const statistics = sentimentService.getSentimentStatistics(results);
+    const analysisResults = await sentimentService.analyzeBatchTexts(texts);
+    const statistics = sentimentService.getSentimentStatistics(analysisResults);
+
+    // Add product name to results
+    const results = analysisResults.map((result, index) => ({
+      ...result,
+      productName: filteredItems[index].productName,
+    }));
 
     // Compare with original labels if available
     const comparison = filteredItems.map((item, index) => ({
       text: item.text,
+      productName: item.productName,
       originalLabel: item.sentiment || item.originalLabel,
-      predictedSentiment: results[index].sentiment,
-      match: item.sentiment === results[index].sentiment.label,
+      predictedSentiment: analysisResults[index].sentiment,
+      match: item.sentiment === analysisResults[index].sentiment.label,
     }));
 
     const accuracy = comparison.filter(c => c.match).length / comparison.length * 100;
 
     const message = keywords && keywords.length > 0
-      ? `Analyzed ${results.length} YouTube comments containing keywords: ${Array.isArray(keywords) ? keywords.join(', ') : keywords}`
-      : `Analyzed ${results.length} YouTube comments`;
+      ? `Analyzed ${results.length} Tokopedia reviews containing keywords: ${Array.isArray(keywords) ? keywords.join(', ') : keywords}`
+      : `Analyzed ${results.length} Tokopedia reviews`;
 
     res.status(200).json({
       success: true,
@@ -115,7 +140,7 @@ export const fetchAndAnalyzeYoutubeComments = async (
         statistics,
         comparison,
         accuracy: accuracy.toFixed(2) + '%',
-        source: 'YouTube Comments Dataset',
+        source: 'Tokopedia Product Reviews Dataset',
         keywords: keywords || null,
         totalFetched: items.length,
         filteredCount: filteredItems.length,

@@ -424,15 +424,15 @@ class ApiClient {
   }
 
   // Dataset methods
-  async fetchYoutubeComments(limit?: number, offset?: number) {
+  async fetchTokopediaReviews(limit?: number, offset?: number) {
     const params = new URLSearchParams();
     if (limit) params.append('limit', limit.toString());
     if (offset) params.append('offset', offset.toString());
-    return this.get(`/datasets/youtube-comments?${params.toString()}`);
+    return this.get(`/datasets/tokopedia-reviews?${params.toString()}`);
   }
 
-  async analyzeYoutubeComments(limit?: number, offset?: number, keywords?: string | string[]) {
-    return this.post('/datasets/youtube-comments/analyze', { limit, offset, keywords });
+  async analyzeTokopediaReviews(limit?: number, offset?: number, keywords?: string | string[]) {
+    return this.post('/datasets/tokopedia-reviews/analyze', { limit, offset, keywords });
   }
 
   async fetchDataset(datasetName: string, config?: string, split?: string, limit?: number, offset?: number) {
@@ -441,6 +441,15 @@ class ApiClient {
 
   async getDatasetInfo(datasetName: string) {
     return this.get(`/datasets/info/${datasetName}`);
+  }
+
+  // Chatbot methods
+  async chatWithAnalysis(question: string, context: any, analysisId?: string) {
+    return this.post('/analysis/chat', { question, context, analysisId });
+  }
+
+  async getChatHistory(analysisId: string) {
+    return this.get(`/analysis/${analysisId}/chat-history`);
   }
 }
 

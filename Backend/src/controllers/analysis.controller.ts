@@ -8,6 +8,7 @@ import { AppError } from '../utils/AppError';
 import Papa from 'papaparse';
 import fs from 'fs';
 import Tesseract from 'tesseract.js';
+import OpenAI from 'openai';
 
 /**
  * Analyze single text
@@ -580,12 +581,8 @@ export const analyzeCsvFile = async (
     let aiInsights: string | undefined;
 
     if (openaiService.isAvailable()) {
-      // AI Analysis Mode - limit to 50 texts due to cost
-      const textsToAnalyze = texts.slice(0, 50);
-
-      if (texts.length > 50) {
-        console.log(`⚠️ CSV has ${texts.length} rows, limiting to 50 for AI analysis (cost control)`);
-      }
+      // AI Analysis Mode - analyze all texts
+      const textsToAnalyze = texts;
 
       console.log(`🤖 Analyzing ${textsToAnalyze.length} texts from CSV with AI...`);
 
@@ -627,14 +624,10 @@ export const analyzeCsvFile = async (
       });
 
     } else {
-      // Traditional Analysis Mode - supports up to 500 texts
-      const textsToAnalyze = texts.slice(0, 500);
+      // Traditional Analysis Mode - analyze all texts (FREE with IndoBERT)
+      const textsToAnalyze = texts;
 
-      if (texts.length > 500) {
-        console.log(`⚠️ CSV has ${texts.length} rows, limiting to 500 for analysis`);
-      }
-
-      console.log(`🔍 Analyzing ${textsToAnalyze.length} texts from CSV...`);
+      console.log(`🔍 Analyzing ${textsToAnalyze.length} texts from CSV with IndoBERT (FREE)...`);
 
       // Analyze texts in batches of 100 (API limit)
       const BATCH_SIZE = 100;
@@ -797,22 +790,19 @@ export const analyzeImageFile = async (
           console.log('⚠️ AI parsing returned no comments, falling back to line-by-line');
           texts = cleanedText
             .split('\n')
-            .filter(t => t.trim().length > 10)
-            .slice(0, 100);
+            .filter(t => t.trim().length > 10);
         }
       } catch (error) {
         console.error('❌ AI comment parsing failed, falling back to line-by-line:', error);
         texts = cleanedText
           .split('\n')
-          .filter(t => t.trim().length > 10)
-          .slice(0, 100);
+          .filter(t => t.trim().length > 10);
       }
     } else {
       // Fallback if AI not available
       texts = cleanedText
         .split('\n')
-        .filter(t => t.trim().length > 10)
-        .slice(0, 100);
+        .filter(t => t.trim().length > 10);
     }
 
     if (texts.length === 0) {
@@ -829,14 +819,10 @@ export const analyzeImageFile = async (
     let aiInsights: string | undefined;
 
     if (openaiService.isAvailable()) {
-      // AI Analysis Mode - limit to 20 texts due to cost
-      const textsToAnalyze = texts.slice(0, 20);
+      // AI Analysis Mode - analyze all texts (may incur OpenAI costs)
+      const textsToAnalyze = texts;
 
-      if (texts.length > 20) {
-        console.log(`⚠️ Image has ${texts.length} lines, limiting to 20 for AI analysis (cost control)`);
-      }
-
-      console.log(`🤖 Analyzing ${textsToAnalyze.length} text lines with AI...`);
+      console.log(`🤖 Analyzing ${textsToAnalyze.length} text lines with AI (OpenAI costs may apply)...`);
 
       // Use AI for deep analysis
       const aiResults = await openaiService.batchDeepSentimentAnalysis(textsToAnalyze);
@@ -952,6 +938,178 @@ export const analyzeImageFile = async (
     if (req.file && fs.existsSync(req.file.path)) {
       fs.unlinkSync(req.file.path);
     }
+    next(error);
+  }
+};
+
+/**
+ * Chat with AI about analysis results
+ * POST /api/analysis/chat
+ */
+export const chatWithAnalysis = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { question, context, analysisId } = req.body;
+
+    if (!question || typeof question !== 'string') {
+      throw new AppError('Question is required and must be a string', 400);
+    }
+
+    if (!context || typeof context !== 'object') {
+      throw new AppError('Analysis context is required', 400);
+    }
+
+    // Initialize OpenAI client
+    const openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+
+    // Prepare context summary for the AI
+    const { statistics, aiInsights, sampleResults, totalResults } = context;
+
+    const positivePercentage = statistics.positivePercentage || 0;
+    const negativePercentage = statistics.negativePercentage || 0;
+    const neutralPercentage = statistics.neutralPercentage || 0;
+    const averageScore = statistics.averageScore || 0;
+
+    const sampleResultsText = sampleResults.map((r: any, i: number) => {
+      const truncatedText = r.text.substring(0, 100);
+      const suffix = r.text.length > 100 ? '...' : '';
+      const productInfo = r.productName ? ` (Product: ${r.productName})` : '';
+      return `${i + 1}. [${r.sentiment.toUpperCase()}]${productInfo} ${truncatedText}${suffix}`;
+    }).join('\n');
+
+    const hasProductNames = sampleResults.some((r: any) => r.productName);
+    const dataSource = hasProductNames ? 'Tokopedia Product Reviews' : 'User-provided text';
+
+    const contextSummary = `Analysis Context:
+- Data Source: ${dataSource}
+- Total analyzed items: ${totalResults}
+- Positive: ${statistics.positive} (${positivePercentage.toFixed(1)}%)
+- Negative: ${statistics.negative} (${negativePercentage.toFixed(1)}%)
+- Neutral: ${statistics.neutral} (${neutralPercentage.toFixed(1)}%)
+- Average confidence: ${(averageScore * 100).toFixed(1)}%
+
+${aiInsights ? `Previous AI Insights:\n${aiInsights}\n` : ''}
+
+Sample Results (first 10):
+${sampleResultsText}`;
+
+    // Create chat completion
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        {
+          role: 'system',
+          content: 'You are a helpful AI assistant specialized in sentiment analysis for e-commerce and general text. You help users understand their sentiment analysis results by answering questions about the data, providing insights, and making recommendations. When analyzing product reviews, provide specific insights about products and customer satisfaction. Be concise, friendly, and actionable in your responses. Use the provided analysis context to answer questions accurately.',
+        },
+        {
+          role: 'user',
+          content: `${contextSummary}\n\nUser Question: ${question}`,
+        },
+      ],
+      temperature: 0.7,
+      max_tokens: 500,
+    });
+
+    const response = completion.choices[0]?.message?.content || 'I apologize, but I could not generate a response.';
+
+    // Save chat messages to database if analysisId is provided
+    if (analysisId) {
+      try {
+        // Save user message
+        await supabase.from('analysis_chat_messages').insert({
+          analysis_id: analysisId,
+          role: 'user',
+          content: question,
+        });
+
+        // Save assistant response
+        await supabase.from('analysis_chat_messages').insert({
+          analysis_id: analysisId,
+          role: 'assistant',
+          content: response,
+        });
+      } catch (dbError) {
+        console.error('⚠️ Failed to save chat messages:', dbError);
+        // Don't fail the request if saving messages fails
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Chat response generated successfully',
+      data: {
+        response,
+        question,
+      },
+    });
+  } catch (error: any) {
+    console.error('❌ Chatbot error:', error);
+
+    if (error.status === 429) {
+      throw new AppError('OpenAI API rate limit exceeded. Please try again later.', 429);
+    }
+
+    if (error.code === 'insufficient_quota') {
+      throw new AppError('OpenAI API quota exceeded. Please contact administrator.', 503);
+    }
+
+    next(error);
+  }
+};
+
+/**
+ * Get chat history for an analysis
+ * GET /api/analysis/:id/chat-history
+ */
+export const getChatHistory = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const userId = req.user?.id;
+
+    if (!userId) {
+      throw new AppError('Unauthorized', 401);
+    }
+
+    // Verify user owns this analysis
+    const { data: analysis, error: analysisError } = await supabase
+      .from('analyses')
+      .select('id')
+      .eq('id', id)
+      .eq('user_id', userId)
+      .single();
+
+    if (analysisError || !analysis) {
+      throw new AppError('Analysis not found', 404);
+    }
+
+    // Get chat messages
+    const { data: messages, error: messagesError } = await supabase
+      .from('analysis_chat_messages')
+      .select('*')
+      .eq('analysis_id', id)
+      .order('created_at', { ascending: true });
+
+    if (messagesError) {
+      throw new AppError('Failed to fetch chat history', 500);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Chat history retrieved successfully',
+      data: {
+        messages: messages || [],
+      },
+    });
+  } catch (error) {
     next(error);
   }
 };

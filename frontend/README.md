@@ -145,8 +145,4 @@ NEXT_PUBLIC_API_URL=your_api_url
 
 ## License
 
-MIT
-
----
-
-Built with ❤️ using Next.js and Tailwind CSS
+Danendra Farrel Adriansyah

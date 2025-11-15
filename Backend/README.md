@@ -37,7 +37,17 @@ PORT=5000
 NODE_ENV=development
 FRONTEND_URL=http://localhost:3000
 JWT_SECRET=your-secret-key
+SUPABASE_URL=your-supabase-url
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 ```
+
+4. Jalankan database migration untuk membuat tabel chat messages:
+```bash
+# Connect ke Supabase database dan jalankan file migration
+psql <your-database-url> < database/migrations/015_create_analysis_chat_messages.sql
+```
+
+Atau bisa manual copy-paste SQL dari file `database/migrations/015_create_analysis_chat_messages.sql` ke Supabase SQL Editor.
 
 ## 🏃 Running the Server
 
@@ -183,5 +193,4 @@ npm run lint
 
 ## 📄 License
 
-ISC
-
+Danendra Farrel Adriansyah

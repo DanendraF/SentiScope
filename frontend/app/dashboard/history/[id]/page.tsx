@@ -17,6 +17,9 @@ import {
 } from 'lucide-react';
 import { apiClient } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
+import { SentimentPieChart } from '@/components/charts/sentiment-pie-chart';
+import { SentimentTrendChart } from '@/components/charts/sentiment-trend-chart';
+import { AnalysisChatbot } from '@/components/chatbot/analysis-chatbot';
 
 interface AnalysisItem {
   id: string;
@@ -235,6 +238,45 @@ export default function AnalysisDetailPage() {
         </Card>
       </div>
 
+      {/* Charts Section */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Sentiment Distribution</CardTitle>
+            <CardDescription>
+              Overall sentiment breakdown
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <SentimentPieChart
+              positive={analysis.positiveCount}
+              negative={analysis.negativeCount}
+              neutral={analysis.neutralCount}
+            />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Sentiment Trend</CardTitle>
+            <CardDescription>
+              Cumulative sentiment over time
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <SentimentTrendChart
+              results={analysis.items.map(item => ({
+                text: item.textContent,
+                sentiment: {
+                  label: item.sentimentLabel.toLowerCase(),
+                  score: item.confidenceScore
+                }
+              }))}
+            />
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Analysis Items */}
       <Card>
         <CardHeader>
@@ -281,6 +323,31 @@ export default function AnalysisDetailPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Chatbot */}
+      <AnalysisChatbot
+        results={analysis.items.map(item => ({
+          text: item.textContent,
+          sentiment: {
+            label: item.sentimentLabel,
+            score: item.confidenceScore
+          },
+          keywords: [],
+          productName: undefined
+        }))}
+        statistics={{
+          total: analysis.totalItems,
+          positive: analysis.positiveCount,
+          negative: analysis.negativeCount,
+          neutral: analysis.neutralCount,
+          positivePercentage: (analysis.positiveCount / analysis.totalItems) * 100,
+          negativePercentage: (analysis.negativeCount / analysis.totalItems) * 100,
+          neutralPercentage: (analysis.neutralCount / analysis.totalItems) * 100,
+          averageScore: analysis.averageScore
+        }}
+        aiInsights={null}
+        analysisId={analysis.id}
+      />
     </div>
   );
 }
