@@ -42,7 +42,7 @@ class AnalysisDatabaseService {
   async saveAnalysis(
     userId: string,
     title: string,
-    inputType: 'text' | 'batch' | 'keywords' | 'csv',
+    inputType: 'text' | 'batch' | 'keywords' | 'csv' | 'image',
     results: TextAnalysisResult[],
     filePath?: string,
     fileUrl?: string,
@@ -118,30 +118,64 @@ class AnalysisDatabaseService {
   }
 
   /**
-   * Get all analyses for a user
+   * Get all analyses for a user with retry logic
    */
   async getUserAnalyses(userId: string, limit: number = 50, offset: number = 0): Promise<Analysis[]> {
-    try {
-      const { data, error } = await supabase
-        .from('analyses')
-        .select('*')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false })
-        .range(offset, offset + limit - 1);
+    const maxRetries = 3;
+    let lastError: any;
 
-      if (error) {
-        console.error('Failed to get user analyses:', error);
-        throw new AppError('Failed to retrieve analyses', 500);
-      }
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`🔄 Fetching user analyses (attempt ${attempt}/${maxRetries})...`);
 
-      return (data || []).map(row => this.mapAnalysisRow(row));
-    } catch (error: any) {
-      console.error('Failed to get user analyses:', error);
-      if (error instanceof AppError) {
-        throw error;
+        const { data, error } = await supabase
+          .from('analyses')
+          .select('*')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false })
+          .range(offset, offset + limit - 1);
+
+        if (error) {
+          console.error(`❌ Database error (attempt ${attempt}):`, error);
+          lastError = error;
+
+          // If it's a network error, retry
+          if (attempt < maxRetries && (error.message?.includes('fetch') || error.message?.includes('network'))) {
+            console.log(`⏳ Retrying in ${attempt * 1000}ms...`);
+            await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+            continue;
+          }
+
+          throw new AppError('Failed to retrieve analyses from database', 500);
+        }
+
+        console.log(`✅ Successfully retrieved ${data?.length || 0} analyses`);
+        return (data || []).map(row => this.mapAnalysisRow(row));
+
+      } catch (error: any) {
+        console.error(`❌ Failed to get user analyses (attempt ${attempt}):`, error);
+        lastError = error;
+
+        if (error instanceof AppError) {
+          if (attempt === maxRetries) {
+            throw error;
+          }
+        } else {
+          // Network/fetch errors - retry
+          if (attempt < maxRetries && (error.message?.includes('fetch') || error.message?.includes('network') || error.code === 'ECONNREFUSED')) {
+            console.log(`⏳ Network error, retrying in ${attempt * 1000}ms...`);
+            await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+            continue;
+          }
+        }
+
+        if (attempt === maxRetries) {
+          throw new AppError('Failed to retrieve analyses - connection error', 500);
+        }
       }
-      throw new AppError('Failed to retrieve analyses', 500);
     }
+
+    throw new AppError('Failed to retrieve analyses after multiple retries', 500);
   }
 
   /**

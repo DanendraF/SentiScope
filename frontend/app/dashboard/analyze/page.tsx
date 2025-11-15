@@ -34,6 +34,8 @@ interface AnalysisResult {
   keywords?: string[];
   explanation?: string;
   keyPhrases?: string[];
+  username?: string;
+  timestamp?: string;
 }
 
 interface Statistics {
@@ -186,7 +188,17 @@ export default function AnalyzePage() {
       if (response.success && response.data) {
         setResults(response.data.results);
         setFilteredResults(response.data.results);
-        setStatistics(response.data.statistics);
+
+        // Calculate percentages if not provided by backend
+        const stats = response.data.statistics;
+        if (stats && (!stats.positivePercentage || !stats.negativePercentage || !stats.neutralPercentage)) {
+          const total = stats.positive + stats.negative + stats.neutral;
+          stats.positivePercentage = total > 0 ? (stats.positive / total) * 100 : 0;
+          stats.negativePercentage = total > 0 ? (stats.negative / total) * 100 : 0;
+          stats.neutralPercentage = total > 0 ? (stats.neutral / total) * 100 : 0;
+        }
+
+        setStatistics(stats);
         setAiInsights(response.data.insights || null);
         setCurrentPage(1); // Reset to first page
         setShowResults(true);
@@ -362,7 +374,17 @@ export default function AnalyzePage() {
       if (response.success && response.data) {
         setResults(response.data.results);
         setFilteredResults(response.data.results);
-        setStatistics(response.data.statistics);
+
+        // Calculate percentages if not provided by backend
+        const stats = response.data.statistics;
+        if (stats && (!stats.positivePercentage || !stats.negativePercentage || !stats.neutralPercentage)) {
+          const total = stats.positive + stats.negative + stats.neutral;
+          stats.positivePercentage = total > 0 ? (stats.positive / total) * 100 : 0;
+          stats.negativePercentage = total > 0 ? (stats.negative / total) * 100 : 0;
+          stats.neutralPercentage = total > 0 ? (stats.neutral / total) * 100 : 0;
+        }
+
+        setStatistics(stats);
         setAiInsights(response.data.insights || null);
         setCurrentPage(1); // Reset to first page
         setShowResults(true);
@@ -618,7 +640,7 @@ export default function AnalyzePage() {
               </CardHeader>
               <CardContent>
                 <div className="text-3xl font-bold text-green-600">
-                  {statistics.positivePercentage.toFixed(1)}%
+                  {(statistics.positivePercentage || 0).toFixed(1)}%
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">{statistics.positive} mentions</p>
               </CardContent>
@@ -630,7 +652,7 @@ export default function AnalyzePage() {
               </CardHeader>
               <CardContent>
                 <div className="text-3xl font-bold text-red-600">
-                  {statistics.negativePercentage.toFixed(1)}%
+                  {(statistics.negativePercentage || 0).toFixed(1)}%
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">{statistics.negative} mentions</p>
               </CardContent>
@@ -642,7 +664,7 @@ export default function AnalyzePage() {
               </CardHeader>
               <CardContent>
                 <div className="text-3xl font-bold text-gray-600">
-                  {statistics.neutralPercentage.toFixed(1)}%
+                  {(statistics.neutralPercentage || 0).toFixed(1)}%
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">{statistics.neutral} mentions</p>
               </CardContent>
@@ -712,21 +734,21 @@ export default function AnalyzePage() {
                   <div className="text-2xl font-bold text-red-600 mb-1">Negative</div>
                   <div className="text-sm font-medium text-muted-foreground mb-2">Unhappy/Dissatisfied</div>
                   <div className="text-2xl font-bold text-red-600">{statistics.negative}</div>
-                  <div className="text-xs text-muted-foreground mt-1">{statistics.negativePercentage.toFixed(1)}%</div>
+                  <div className="text-xs text-muted-foreground mt-1">{(statistics.negativePercentage || 0).toFixed(1)}%</div>
                 </div>
                 <div className="text-center p-4 rounded-lg border-2 border-gray-500/20 bg-gray-50/50 dark:bg-gray-950/20">
                   <div className="text-4xl mb-2">😐</div>
                   <div className="text-2xl font-bold text-gray-600 mb-1">Neutral</div>
                   <div className="text-sm font-medium text-muted-foreground mb-2">Indifferent/Okay</div>
                   <div className="text-2xl font-bold text-gray-600">{statistics.neutral}</div>
-                  <div className="text-xs text-muted-foreground mt-1">{statistics.neutralPercentage.toFixed(1)}%</div>
+                  <div className="text-xs text-muted-foreground mt-1">{(statistics.neutralPercentage || 0).toFixed(1)}%</div>
                 </div>
                 <div className="text-center p-4 rounded-lg border-2 border-green-500/20 bg-green-50/50 dark:bg-green-950/20">
                   <div className="text-4xl mb-2">😊</div>
                   <div className="text-2xl font-bold text-green-600 mb-1">Positive</div>
                   <div className="text-sm font-medium text-muted-foreground mb-2">Happy/Satisfied</div>
                   <div className="text-2xl font-bold text-green-600">{statistics.positive}</div>
-                  <div className="text-xs text-muted-foreground mt-1">{statistics.positivePercentage.toFixed(1)}%</div>
+                  <div className="text-xs text-muted-foreground mt-1">{(statistics.positivePercentage || 0).toFixed(1)}%</div>
                 </div>
               </div>
               <div className="pt-4">
@@ -747,7 +769,7 @@ export default function AnalyzePage() {
                 </div>
                 <div className="text-center">
                   <div className="text-sm text-muted-foreground mb-1">Satisfaction Rate</div>
-                  <div className="text-2xl font-bold text-green-600">{statistics.positivePercentage.toFixed(1)}%</div>
+                  <div className="text-2xl font-bold text-green-600">{(statistics.positivePercentage || 0).toFixed(1)}%</div>
                   <div className="text-xs text-muted-foreground">(Positive)</div>
                 </div>
               </div>
@@ -776,7 +798,7 @@ export default function AnalyzePage() {
                     <p className="text-sm">
                       Overall sentiment is <span className="font-bold text-green-600">
                         {statistics.positivePercentage > 50 ? 'strongly positive' : statistics.negativePercentage > 50 ? 'strongly negative' : 'mixed'}
-                      </span> with {statistics.positivePercentage.toFixed(1)}% positive mentions.
+                      </span> with {(statistics.positivePercentage || 0).toFixed(1)}% positive mentions.
                     </p>
                   </div>
                   <div className="p-4 bg-yellow-50 dark:bg-yellow-950/30 rounded-lg border border-yellow-200 dark:border-yellow-900">
@@ -810,6 +832,7 @@ export default function AnalyzePage() {
                   <TableRow>
                     <TableHead className="w-12">#</TableHead>
                     <TableHead>Text</TableHead>
+                    <TableHead>User/Time</TableHead>
                     <TableHead>Sentiment</TableHead>
                     <TableHead>Keywords</TableHead>
                     <TableHead className="text-right">Confidence</TableHead>
@@ -825,6 +848,20 @@ export default function AnalyzePage() {
                       </TableCell>
                       <TableCell className="font-medium max-w-md">
                         {result.text}
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {result.username || result.timestamp ? (
+                          <div className="space-y-1">
+                            {result.username && (
+                              <div className="font-medium text-blue-600">@{result.username}</div>
+                            )}
+                            {result.timestamp && (
+                              <div className="text-xs text-muted-foreground">{result.timestamp}</div>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">-</span>
+                        )}
                       </TableCell>
                       <TableCell>
                         <span

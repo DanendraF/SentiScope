@@ -354,6 +354,111 @@ Return ONLY valid JSON, no additional text.`;
     console.log(`✅ Batch deep sentiment analysis completed`);
     return results;
   }
+
+  /**
+   * Parse comments from OCR extracted text (for YouTube, social media screenshots)
+   * Returns structured data with username, timestamp, and comment text
+   */
+  async parseCommentsFromOCR(ocrText: string): Promise<
+    Array<{
+      username: string;
+      timestamp: string;
+      comment: string;
+    }>
+  > {
+    if (!this.openai) {
+      throw new Error('OpenAI service is not available');
+    }
+
+    console.log('🤖 Parsing comments from OCR text with AI...');
+
+    try {
+      const prompt = `You are an expert at parsing social media comments from OCR-extracted text across ALL platforms.
+
+OCR EXTRACTED TEXT:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${ocrText}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+TASK:
+Parse this OCR text and extract individual comments with their metadata. This text may be from ANY social media platform including:
+- **YouTube** - comments with username, timestamp, like count
+- **Instagram** - posts/stories comments with username, timestamp
+- **Twitter/X** - tweets/replies with @username, timestamp, engagement metrics
+- **Facebook** - post comments with name, time posted
+- **TikTok** - video comments with username, timestamp
+- **LinkedIn** - post comments with name, job title, timestamp
+- **Reddit** - posts/comments with u/username, subreddit, timestamp
+- **Discord** - messages with username#tag, timestamp
+- **Telegram** - channel/group messages with username, timestamp
+- **WhatsApp** - chat messages (if screenshot contains multiple messages)
+- **Google Reviews** - reviews with reviewer name, star rating, date
+- **Amazon Reviews** - product reviews with reviewer name, rating, date
+- **Other platforms** - any comment/review system
+
+Each comment typically has:
+- **Username/Name** (may have @, u/, #tag, or plain name)
+- **Timestamp** (e.g., "5 days ago", "2 months ago", "3 hours ago", "Jan 15, 2024", "12:45 PM")
+- **Comment text** (the actual content/message/review)
+
+Ignore UI elements like: "Reply", "Translate to English", "like", "dislike", "share", "retweet", "follow", "subscribe", "view replies", "show more", "edited", button labels, navigation elements, etc.
+
+Return a JSON object with comments array like this:
+{
+  "comments": [
+    {
+      "username": "username_here",
+      "timestamp": "time_ago_here",
+      "comment": "actual_comment_text_here"
+    }
+  ]
+}
+
+Guidelines:
+- **Platform Recognition**: Automatically detect which platform based on format (YouTube style, Instagram style, Twitter/X style, etc.)
+- **Username Extraction**: Extract username/name even if it has @, u/, #tag, or no prefix
+- **Timestamp Flexibility**: Handle all timestamp formats (relative like "5 days ago", absolute like "Jan 15, 2024", time only like "12:45 PM")
+- **Comment Content**: Only include actual comment/message/review text, not UI elements or metadata
+- **Multi-line Comments**: Merge multi-line comments into single comment field, preserve line breaks if part of content
+- **Ratings/Stars**: If platform has ratings (Google Reviews, Amazon), you can include in comment like "⭐⭐⭐⭐⭐ [comment text]"
+- **Emojis**: Preserve emojis in comment text
+- **Missing Data**: If username is missing use "Unknown User", if timestamp missing use "Unknown Time"
+- **Skip Empty**: Skip empty, meaningless, or UI-only text
+
+Return ONLY valid JSON object with comments array, no additional text.`;
+
+      const response = await this.openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content:
+              'You are an expert at parsing and structuring social media comments from OCR text. You accurately identify usernames, timestamps, and comment content while filtering out UI elements. Return only valid JSON.',
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+        temperature: 0.3,
+        max_tokens: 2000,
+        response_format: { type: 'json_object' },
+      });
+
+      const content = response.choices[0].message.content?.trim() || '{}';
+      const result = JSON.parse(content);
+
+      // Handle both array directly or { comments: array } structure
+      const comments = Array.isArray(result) ? result : result.comments || [];
+
+      console.log(`✅ Parsed ${comments.length} comments from OCR text`);
+
+      return comments;
+    } catch (error: any) {
+      console.error('❌ Comment parsing failed:', error.message);
+      throw error;
+    }
+  }
 }
 
 export const openaiService = new OpenAIService();

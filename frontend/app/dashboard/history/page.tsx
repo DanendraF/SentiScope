@@ -242,7 +242,7 @@ export default function HistoryPage() {
                 <SelectContent>
                   <SelectItem value="all">All Types</SelectItem>
                   <SelectItem value="text">Text</SelectItem>
-                  <SelectItem value="batch">Batch</SelectItem>
+                  <SelectItem value="image">Image</SelectItem>
                   <SelectItem value="csv">CSV</SelectItem>
                   <SelectItem value="keywords">Keywords</SelectItem>
                 </SelectContent>

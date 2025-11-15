@@ -781,11 +781,39 @@ export const analyzeImageFile = async (
 
     console.log(`📝 Cleaned text (${cleanedText.length} chars):\n${cleanedText.substring(0, 200)}...`);
 
-    // Split text into sentences/lines for analysis
-    const texts = cleanedText
-      .split('\n')
-      .filter(t => t.trim().length > 10) // Filter out very short lines
-      .slice(0, 100); // Limit to 100 lines
+    // Use AI to parse comments structure (username, timestamp, comment)
+    let texts: string[] = [];
+    let parsedComments: Array<{ username: string; timestamp: string; comment: string }> = [];
+
+    if (openaiService.isAvailable()) {
+      try {
+        console.log('🤖 Using AI to parse comment structure...');
+        parsedComments = await openaiService.parseCommentsFromOCR(cleanedText);
+
+        if (parsedComments.length > 0) {
+          texts = parsedComments.map(c => c.comment);
+          console.log(`✅ AI parsed ${parsedComments.length} comments successfully`);
+        } else {
+          console.log('⚠️ AI parsing returned no comments, falling back to line-by-line');
+          texts = cleanedText
+            .split('\n')
+            .filter(t => t.trim().length > 10)
+            .slice(0, 100);
+        }
+      } catch (error) {
+        console.error('❌ AI comment parsing failed, falling back to line-by-line:', error);
+        texts = cleanedText
+          .split('\n')
+          .filter(t => t.trim().length > 10)
+          .slice(0, 100);
+      }
+    } else {
+      // Fallback if AI not available
+      texts = cleanedText
+        .split('\n')
+        .filter(t => t.trim().length > 10)
+        .slice(0, 100);
+    }
 
     if (texts.length === 0) {
       // Clean up uploaded file
@@ -813,15 +841,25 @@ export const analyzeImageFile = async (
       // Use AI for deep analysis
       const aiResults = await openaiService.batchDeepSentimentAnalysis(textsToAnalyze);
 
-      results = aiResults.map((result) => ({
-        text: result.text,
-        sentiment: {
-          label: result.sentiment,
-          score: result.score,
-        },
-        explanation: result.explanation,
-        keyPhrases: result.keyPhrases,
-      }));
+      results = aiResults.map((result, index) => {
+        // Find matching parsed comment for metadata
+        const parsedComment = parsedComments[index];
+
+        return {
+          text: result.text,
+          sentiment: {
+            label: result.sentiment,
+            score: result.score,
+          },
+          explanation: result.explanation,
+          keyPhrases: result.keyPhrases,
+          // Add metadata if available from parsed comments
+          ...(parsedComment && {
+            username: parsedComment.username,
+            timestamp: parsedComment.timestamp,
+          }),
+        };
+      });
 
       // Calculate statistics
       statistics = {
@@ -884,7 +922,7 @@ export const analyzeImageFile = async (
       savedAnalysis = await analysisDatabaseService.saveAnalysis(
         userId,
         analysisTitle,
-        'text', // Use 'text' type since it's extracted text
+        'image', // Use 'image' type for image uploads
         results,
         filePath,
         fileUrl,
