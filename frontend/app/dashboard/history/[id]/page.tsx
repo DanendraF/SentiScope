@@ -71,10 +71,10 @@ export default function AnalysisDetailPage() {
     try {
       setIsLoading(true);
       setError(null);
-      const response: any = await apiClient.getAnalysisById(id);
+      const response = await apiClient.getAnalysisById(id);
 
       if (response.success && response.data) {
-        setAnalysis(response.data.analysis);
+        setAnalysis(response.data as AnalysisDetail);
       } else {
         setError('Analysis not found');
       }

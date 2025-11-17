@@ -34,6 +34,16 @@ interface Statistics {
   averageScore: number;
 }
 
+interface SingleAnalysisResponse {
+  result: AnalysisResult;
+  statistics: Statistics;
+}
+
+interface BatchAnalysisResponse {
+  results: AnalysisResult[];
+  statistics: Statistics;
+}
+
 export default function AnalysisPage() {
   useAuth(true); // Require authentication
 
@@ -78,11 +88,12 @@ export default function AnalysisPage() {
       console.log('✅ API Response:', response);
 
       if (response.success && response.data) {
-        console.log('📊 Result:', response.data.result);
-        console.log('📈 Statistics:', response.data.statistics);
+        const data = response.data as SingleAnalysisResponse;
+        console.log('📊 Result:', data.result);
+        console.log('📈 Statistics:', data.statistics);
 
-        setSingleResult(response.data.result);
-        setSingleStats(response.data.statistics);
+        setSingleResult(data.result);
+        setSingleStats(data.statistics);
 
         toast({
           title: 'Success',
@@ -118,8 +129,9 @@ export default function AnalysisPage() {
       const response = await apiClient.analyzeBatch(texts, true);
 
       if (response.success && response.data) {
-        setBatchResults(response.data.results);
-        setBatchStats(response.data.statistics);
+        const data = response.data as BatchAnalysisResponse;
+        setBatchResults(data.results);
+        setBatchStats(data.statistics);
 
         toast({
           title: 'Success',
@@ -154,8 +166,9 @@ export default function AnalysisPage() {
       const response = await apiClient.analyzeKeywords(kwds, true);
 
       if (response.success && response.data) {
-        setKeywordResults(response.data.results);
-        setKeywordStats(response.data.statistics);
+        const data = response.data as any as BatchAnalysisResponse;
+        setKeywordResults(data.results);
+        setKeywordStats(data.statistics);
 
         toast({
           title: 'Success',

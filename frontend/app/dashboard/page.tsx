@@ -31,6 +31,15 @@ interface RecentAnalysis {
   createdAt: string;
 }
 
+interface AnalysisHistoryResponse {
+  analyses: RecentAnalysis[];
+  pagination: {
+    total: number;
+    limit: number;
+    offset: number;
+  };
+}
+
 export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [recentAnalyses, setRecentAnalyses] = useState<RecentAnalysis[]>([]);
@@ -48,10 +57,11 @@ export default function DashboardPage() {
       setError(null);
 
       // Fetch all analyses to calculate aggregate stats
-      const response: any = await apiClient.getAnalysisHistory(100, 0);
+      const response = await apiClient.getAnalysisHistory(100, 0);
 
       if (response.success && response.data) {
-        const analyses = response.data.analyses;
+        const data = response.data as AnalysisHistoryResponse;
+        const analyses = data.analyses;
 
         // Calculate aggregate statistics
         let totalItems = 0;

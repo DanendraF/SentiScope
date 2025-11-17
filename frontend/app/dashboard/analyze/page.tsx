@@ -43,6 +43,34 @@ interface AnalysisResult {
   productName?: string;
 }
 
+interface DeepAnalysisResponse {
+  results: AnalysisResult[];
+  insights?: string | null;
+  analysisId?: string;
+}
+
+interface DatasetAnalysisResponse {
+  results: AnalysisResult[];
+}
+
+interface CSVAnalysisResponse {
+  results: AnalysisResult[];
+  statistics: Statistics;
+  insights?: string | null;
+  usedAI?: boolean;
+  fileName?: string;
+  analyzedRows?: number;
+}
+
+interface ImageAnalysisResponse {
+  results: AnalysisResult[];
+  statistics: Statistics;
+  insights?: string | null;
+  usedAI?: boolean;
+  fileName?: string;
+  analyzedLines?: number;
+}
+
 interface Statistics {
   total: number;
   positive: number;
@@ -111,7 +139,7 @@ export default function AnalyzePage() {
             ? `Comment Analysis - ${firstKeywords}`
             : `Comment Analysis - ${new Date().toLocaleDateString()}`;
 
-          const response: any = await apiClient.deepAnalysis(
+          const response = await apiClient.deepAnalysis(
             textsToAnalyze.length === 1 ? textsToAnalyze[0] : undefined,
             textsToAnalyze.length > 1 ? textsToAnalyze : undefined,
             true,
@@ -120,11 +148,12 @@ export default function AnalyzePage() {
           console.log('✅ AI Analysis Response:', response);
 
           if (response.success && response.data) {
-            allResults.push(...response.data.results);
-            insights = response.data.insights || null;
+            const data = response.data as DeepAnalysisResponse;
+            allResults.push(...data.results);
+            insights = data.insights || null;
             // Save analysisId if available
-            if (response.data.analysisId) {
-              setAnalysisId(response.data.analysisId);
+            if (data.analysisId) {
+              setAnalysisId(data.analysisId);
             }
           }
         }
@@ -132,7 +161,7 @@ export default function AnalyzePage() {
         // 2. Search and analyze dataset with keywords
         if (keywords.length > 0) {
           console.log('🔍 Searching dataset with keywords:', keywords.slice(0, 5));
-          const datasetResponse: any = await apiClient.analyzeTokopediaReviews(
+          const datasetResponse = await apiClient.analyzeTokopediaReviews(
             undefined, // No limit - analyze ALL matching items
             0,
             keywords.slice(0, 5) // Limit to first 5 keywords
@@ -140,7 +169,8 @@ export default function AnalyzePage() {
           console.log('✅ Dataset Response:', datasetResponse);
 
           if (datasetResponse.success && datasetResponse.data) {
-            allResults.push(...datasetResponse.data.results);
+            const datasetData = datasetResponse.data as DatasetAnalysisResponse;
+            allResults.push(...datasetData.results);
           }
         }
       } else {
@@ -148,7 +178,7 @@ export default function AnalyzePage() {
         const productNames = textInput.split('\n').filter(t => t.trim());
         console.log('🛍️ Searching for products:', productNames);
 
-        const datasetResponse: any = await apiClient.analyzeTokopediaReviews(
+        const datasetResponse = await apiClient.analyzeTokopediaReviews(
           undefined, // No limit - analyze ALL reviews for the product
           0,
           productNames // Use product names as keywords
@@ -156,7 +186,8 @@ export default function AnalyzePage() {
         console.log('✅ Dataset Response:', datasetResponse);
 
         if (datasetResponse.success && datasetResponse.data) {
-          allResults.push(...datasetResponse.data.results);
+          const datasetData = datasetResponse.data as DatasetAnalysisResponse;
+          allResults.push(...datasetData.results);
         }
       }
 
@@ -226,15 +257,16 @@ export default function AnalyzePage() {
       const fileName = csvFile.name.replace(/\.[^/.]+$/, ''); // Remove extension
       const csvTitle = `CSV Analysis - ${fileName}`;
 
-      const response: any = await apiClient.analyzeCsv(csvFile, true, csvTitle, csvColumn);
+      const response = await apiClient.analyzeCsv(csvFile, true, csvTitle, csvColumn);
       console.log('✅ CSV Response:', response);
 
       if (response.success && response.data) {
-        setResults(response.data.results);
-        setFilteredResults(response.data.results);
+        const data = response.data as CSVAnalysisResponse;
+        setResults(data.results);
+        setFilteredResults(data.results);
 
         // Calculate percentages if not provided by backend
-        const stats = response.data.statistics;
+        const stats = data.statistics;
         if (stats && (!stats.positivePercentage || !stats.negativePercentage || !stats.neutralPercentage)) {
           const total = stats.positive + stats.negative + stats.neutral;
           stats.positivePercentage = total > 0 ? (stats.positive / total) * 100 : 0;
@@ -243,13 +275,13 @@ export default function AnalyzePage() {
         }
 
         setStatistics(stats);
-        setAiInsights(response.data.insights || null);
+        setAiInsights(data.insights || null);
         setCurrentPage(1); // Reset to first page
         setShowResults(true);
 
         toast({
-          title: response.data.usedAI ? 'CSV Analyzed with AI' : 'CSV Analyzed Successfully',
-          description: `Analyzed ${response.data.analyzedRows} rows from ${response.data.fileName}${response.data.usedAI ? ' using AI' : ''}`,
+          title: data.usedAI ? 'CSV Analyzed with AI' : 'CSV Analyzed Successfully',
+          description: `Analyzed ${data.analyzedRows} rows from ${data.fileName}${data.usedAI ? ' using AI' : ''}`,
         });
       }
     } catch (error: any) {
@@ -416,15 +448,16 @@ export default function AnalyzePage() {
       const fileName = imageFile.name.replace(/\.[^/.]+$/, ''); // Remove extension
       const imageTitle = `Image Analysis - ${fileName}`;
 
-      const response: any = await apiClient.analyzeImage(imageFile, true, imageTitle);
+      const response = await apiClient.analyzeImage(imageFile, true, imageTitle);
       console.log('✅ Image Response:', response);
 
       if (response.success && response.data) {
-        setResults(response.data.results);
-        setFilteredResults(response.data.results);
+        const data = response.data as ImageAnalysisResponse;
+        setResults(data.results);
+        setFilteredResults(data.results);
 
         // Calculate percentages if not provided by backend
-        const stats = response.data.statistics;
+        const stats = data.statistics;
         if (stats && (!stats.positivePercentage || !stats.negativePercentage || !stats.neutralPercentage)) {
           const total = stats.positive + stats.negative + stats.neutral;
           stats.positivePercentage = total > 0 ? (stats.positive / total) * 100 : 0;
@@ -433,13 +466,13 @@ export default function AnalyzePage() {
         }
 
         setStatistics(stats);
-        setAiInsights(response.data.insights || null);
+        setAiInsights(data.insights || null);
         setCurrentPage(1); // Reset to first page
         setShowResults(true);
 
         toast({
-          title: response.data.usedAI ? 'Image Analyzed with AI' : 'Image Analyzed Successfully',
-          description: `Extracted and analyzed ${response.data.analyzedLines} text lines from ${response.data.fileName}${response.data.usedAI ? ' using AI' : ''}`,
+          title: data.usedAI ? 'Image Analyzed with AI' : 'Image Analyzed Successfully',
+          description: `Extracted and analyzed ${data.analyzedLines} text lines from ${data.fileName}${data.usedAI ? ' using AI' : ''}`,
         });
       }
     } catch (error: any) {
@@ -1015,7 +1048,7 @@ export default function AnalyzePage() {
                     <div className="flex items-center gap-1">
                       {Array.from({ length: Math.min(5, Math.ceil(filteredResults.length / itemsPerPage)) }, (_, i) => {
                         const totalPages = Math.ceil(filteredResults.length / itemsPerPage);
-                        let pageNum;
+                        let pageNum: number;
                         if (totalPages <= 5) {
                           pageNum = i + 1;
                         } else if (currentPage <= 3) {

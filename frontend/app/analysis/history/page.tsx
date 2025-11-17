@@ -22,6 +22,15 @@ interface Analysis {
   createdAt: string;
 }
 
+interface AnalysisHistoryResponse {
+  analyses: Analysis[];
+  pagination: {
+    total: number;
+    limit: number;
+    offset: number;
+  };
+}
+
 export default function AnalysisHistoryPage() {
   useAuth(true); // Require authentication
 
@@ -41,8 +50,9 @@ export default function AnalysisHistoryPage() {
       const response = await apiClient.getAnalysisHistory(50, 0);
 
       if (response.success && response.data) {
-        setAnalyses(response.data.analyses);
-        setTotal(response.data.pagination.total);
+        const data = response.data as AnalysisHistoryResponse;
+        setAnalyses(data.analyses);
+        setTotal(data.pagination.total);
       }
     } catch (error: any) {
       toast({

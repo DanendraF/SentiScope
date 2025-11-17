@@ -24,6 +24,15 @@ interface Analysis {
   originalFileName?: string;
 }
 
+interface AnalysisHistoryResponse {
+  analyses: Analysis[];
+  pagination: {
+    total: number;
+    limit: number;
+    offset: number;
+  };
+}
+
 export default function HistoryPage() {
   const [analyses, setAnalyses] = useState<Analysis[]>([]);
   const [filteredAnalyses, setFilteredAnalyses] = useState<Analysis[]>([]);
@@ -57,12 +66,13 @@ export default function HistoryPage() {
       setIsLoading(true);
       setError(null);
       const offset = (page - 1) * itemsPerPage;
-      const response: any = await apiClient.getAnalysisHistory(itemsPerPage, offset);
+      const response = await apiClient.getAnalysisHistory(itemsPerPage, offset);
 
       if (response.success && response.data) {
-        setAnalyses(response.data.analyses);
-        setTotalCount(response.data.pagination.total);
-        setTotalPages(Math.ceil(response.data.pagination.total / itemsPerPage));
+        const data = response.data as AnalysisHistoryResponse;
+        setAnalyses(data.analyses);
+        setTotalCount(data.pagination.total);
+        setTotalPages(Math.ceil(data.pagination.total / itemsPerPage));
       }
     } catch (err: any) {
       console.error('Failed to fetch history:', err);
@@ -415,7 +425,7 @@ export default function HistoryPage() {
                 </Button>
                 <div className="flex items-center gap-1">
                   {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                    let pageNum;
+                    let pageNum: number;
                     if (totalPages <= 5) {
                       pageNum = i + 1;
                     } else if (currentPage <= 3) {
