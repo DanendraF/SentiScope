@@ -51,7 +51,7 @@ export default function AnalysisDetailPage() {
       const response = await apiClient.getAnalysisById(id);
 
       if (response.success && response.data) {
-        setAnalysis(response.data.analysis);
+        setAnalysis(response.data as AnalysisDetail);
       }
     } catch (error: any) {
       toast({
