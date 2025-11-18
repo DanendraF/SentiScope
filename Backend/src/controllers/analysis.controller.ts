@@ -1085,7 +1085,7 @@ export const getChatHistory = async (
 ): Promise<void> => {
   try {
     const { id } = req.params;
-    const userId = req.user?.id;
+    const userId = req.user?.userId;
 
     if (!userId) {
       throw new AppError('Unauthorized', 401);

@@ -6,7 +6,7 @@ import datasetRoutes from './dataset.routes';
 const router = Router();
 
 // API info endpoint
-router.get('/', (req, res) => {
+router.get('/', (_req, res) => {
   res.json({
     message: 'SentiScope API',
     version: '1.0.0',

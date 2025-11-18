@@ -11,10 +11,10 @@ if (!fs.existsSync(uploadsDir)) {
 
 // Configure multer storage for CSV
 const csvStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
+  destination: (_req, _file, cb) => {
     cb(null, uploadsDir);
   },
-  filename: (req, file, cb) => {
+  filename: (_req, file, cb) => {
     // Generate unique filename
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const ext = path.extname(file.originalname);
@@ -24,10 +24,10 @@ const csvStorage = multer.diskStorage({
 
 // Configure multer storage for Images
 const imageStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
+  destination: (_req, _file, cb) => {
     cb(null, uploadsDir);
   },
-  filename: (req, file, cb) => {
+  filename: (_req, file, cb) => {
     // Generate unique filename
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const ext = path.extname(file.originalname);
@@ -36,7 +36,7 @@ const imageStorage = multer.diskStorage({
 });
 
 // File filter to only accept CSV files
-const csvFileFilter = (req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+const csvFileFilter = (_req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
   const ext = path.extname(file.originalname).toLowerCase();
 
   if (ext !== '.csv') {
@@ -47,7 +47,7 @@ const csvFileFilter = (req: any, file: Express.Multer.File, cb: multer.FileFilte
 };
 
 // File filter to only accept image files
-const imageFileFilter = (req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+const imageFileFilter = (_req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
   const ext = path.extname(file.originalname).toLowerCase();
   const allowedExts = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'];
 

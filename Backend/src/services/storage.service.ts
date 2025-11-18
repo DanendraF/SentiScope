@@ -1,7 +1,5 @@
 import { supabase } from '../config/database';
-import { AppError } from '../utils/AppError';
 import fs from 'fs';
-import path from 'path';
 
 /**
  * Service for handling file uploads to Supabase Storage
@@ -61,7 +59,7 @@ class StorageService {
       const storagePath = `${userId}/${fileType}/${Date.now()}-${fileName}`;
 
       // Upload to Supabase Storage
-      const { data, error } = await supabase.storage
+      const { error } = await supabase.storage
         .from(this.bucketName)
         .upload(storagePath, fileBuffer, {
           contentType: fileType === 'csv' ? 'text/csv' : 'image/*',

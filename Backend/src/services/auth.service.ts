@@ -61,7 +61,7 @@ export class AuthService {
     const { email, password, name, firstName, lastName } = data;
 
     // Check if user already exists
-    const { data: existingUser, error: checkError } = await supabase
+    const { data: existingUser } = await supabase
       .from('users')
       .select('id')
       .eq('email', email.toLowerCase())
@@ -299,11 +299,11 @@ export class AuthService {
   private generateTokens(payload: JWTPayload): AuthTokens {
     const accessToken = jwt.sign(payload, this.JWT_SECRET, {
       expiresIn: this.JWT_EXPIRES_IN,
-    });
+    } as jwt.SignOptions);
 
     const refreshToken = jwt.sign(payload, this.JWT_REFRESH_SECRET, {
       expiresIn: this.JWT_REFRESH_EXPIRES_IN,
-    });
+    } as jwt.SignOptions);
 
     return { accessToken, refreshToken };
   }

@@ -108,7 +108,7 @@ export const supabase = createClient(
 export const testConnection = async () => {
   try {
     // Test query to check connection
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('users')
       .select('count')
       .limit(1);

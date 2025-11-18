@@ -125,7 +125,6 @@ class AnalysisDatabaseService {
    */
   async getUserAnalyses(userId: string, limit: number = 50, offset: number = 0): Promise<Analysis[]> {
     const maxRetries = 3;
-    let lastError: any;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
@@ -140,7 +139,6 @@ class AnalysisDatabaseService {
 
         if (error) {
           console.error(`❌ Database error (attempt ${attempt}):`, error);
-          lastError = error;
 
           // If it's a network error, retry
           if (attempt < maxRetries && (error.message?.includes('fetch') || error.message?.includes('network'))) {
@@ -157,7 +155,6 @@ class AnalysisDatabaseService {
 
       } catch (error: any) {
         console.error(`❌ Failed to get user analyses (attempt ${attempt}):`, error);
-        lastError = error;
 
         if (error instanceof AppError) {
           if (attempt === maxRetries) {

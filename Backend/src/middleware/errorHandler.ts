@@ -3,17 +3,18 @@ import { AppError } from '../utils/AppError';
 
 export const errorHandler = (
   err: Error | AppError,
-  req: Request,
+  _req: Request,
   res: Response,
-  next: NextFunction
-) => {
+  _next: NextFunction
+): void => {
   if (err instanceof AppError) {
-    return res.status(err.statusCode).json({
+    res.status(err.statusCode).json({
       success: false,
       message: err.message,
       ...(err.errors && { errors: err.errors }),
       ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
     });
+    return;
   }
 
   // Handle unexpected errors
