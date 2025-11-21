@@ -126,7 +126,8 @@ export default function AnalyzePage() {
         const keywords = texts.flatMap(text =>
           text.toLowerCase()
             .split(/\s+/)
-            .filter(word => word.length > 3) // Only words longer than 3 chars
+            .map(word => word.replace(/[^\w\s]/g, '')) // Remove punctuation
+            .filter(word => word.length > 2) // Only words longer than 2 chars (allow "tas", "tv", etc)
         );
 
         // 1. Analyze user's text input with AI (limit to 20 for cost control)
@@ -498,9 +499,15 @@ export default function AnalyzePage() {
     }
 
     const filtered = results.filter(result => {
-      const lowerKeyword = keyword.toLowerCase();
-      const textMatch = result.text.toLowerCase().includes(lowerKeyword);
-      const keywordsMatch = result.keywords?.some(k => k.toLowerCase().includes(lowerKeyword));
+      const lowerKeyword = keyword.toLowerCase().trim();
+      const lowerText = result.text.toLowerCase();
+
+      // Use word boundary regex for exact word matching (not substring)
+      // \b ensures "tas" matches "tas bagus" but NOT "ca-tas-an" or "task"
+      const wordBoundaryRegex = new RegExp(`\\b${lowerKeyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+      const textMatch = wordBoundaryRegex.test(lowerText);
+      const keywordsMatch = result.keywords?.some(k => wordBoundaryRegex.test(k.toLowerCase()));
+
       return textMatch || keywordsMatch;
     });
 

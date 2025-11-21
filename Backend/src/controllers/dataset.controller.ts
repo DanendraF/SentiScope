@@ -66,13 +66,19 @@ export const fetchAndAnalyzeTokopediaReviews = async (
     if (keywords && keywords.length > 0) {
       const keywordArray = Array.isArray(keywords) ? keywords : [keywords];
       filteredItems = items.filter(item => {
-        const textLower = item.text.toLowerCase();
         const productNameLower = item.productName ? item.productName.toLowerCase() : '';
 
-        // Search in both text review AND product name
+        // CRITICAL: Search ONLY in product name for precision
+        // Use word boundary regex for exact word matching (not substring)
+        // \b ensures "tas" matches "tas branded" but NOT "staples" or "task"
         return keywordArray.some((keyword: string) => {
-          const keywordLower = keyword.toLowerCase();
-          return textLower.includes(keywordLower) || productNameLower.includes(keywordLower);
+          const keywordLower = keyword.toLowerCase().trim();
+          // Escape special regex characters
+          const escapedKeyword = keywordLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const wordBoundaryRegex = new RegExp(`\\b${escapedKeyword}\\b`, 'i');
+
+          // Match ONLY in product name (not review text) for precision
+          return wordBoundaryRegex.test(productNameLower);
         });
       });
       console.log(`🔍 Filtered by keywords [${keywordArray.join(', ')}]:`, filteredItems.length, 'items');
