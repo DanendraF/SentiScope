@@ -199,7 +199,7 @@ export function AnalysisChatbot({ results, statistics, aiInsights, analysisId }:
     return (
       <Button
         onClick={() => setIsOpen(true)}
-        className="fixed bottom-6 right-6 h-14 w-14 rounded-full shadow-lg bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600"
+        className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 h-14 w-14 rounded-full shadow-lg bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600"
         size="icon"
       >
         <MessageSquare className="h-6 w-6" />
@@ -208,7 +208,7 @@ export function AnalysisChatbot({ results, statistics, aiInsights, analysisId }:
   }
 
   return (
-    <Card className="fixed bottom-6 right-6 w-96 h-[600px] shadow-2xl flex flex-col z-50">
+    <Card className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 w-[calc(100vw-2rem)] sm:w-96 h-[calc(100vh-8rem)] sm:h-[600px] shadow-2xl flex flex-col z-50">
       <CardHeader className="pb-3 border-b bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-t-lg">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">

@@ -143,7 +143,8 @@ export default function AnalyzePage() {
             textsToAnalyze.length === 1 ? textsToAnalyze[0] : undefined,
             textsToAnalyze.length > 1 ? textsToAnalyze : undefined,
             true,
-            analysisTitle
+            analysisTitle,
+            keywords.slice(0, 5) // Pass top 5 keywords for context
           );
           console.log('✅ AI Analysis Response:', response);
 
@@ -723,27 +724,29 @@ export default function AnalyzePage() {
 
       {showResults && statistics && (
         <div className="space-y-6 animate-in fade-in duration-500">
-          <div className="flex justify-between items-center gap-4">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <h2 className="text-2xl font-bold">Analysis Results</h2>
-            <div className="flex gap-2 items-center">
+            <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center w-full sm:w-auto">
               <Input
                 placeholder="Filter by keyword..."
                 value={keywordFilter}
                 onChange={(e) => handleKeywordFilter(e.target.value)}
-                className="w-64"
+                className="w-full sm:w-64"
               />
-              <Button variant="outline" onClick={handleExportPDF}>
-                <FileDown className="mr-2 h-4 w-4" />
-                PDF
-              </Button>
-              <Button variant="outline" onClick={handleExportExcel}>
-                <FileDown className="mr-2 h-4 w-4" />
-                Excel
-              </Button>
-              <Button variant="outline" onClick={handleExportCSV}>
-                <Download className="mr-2 h-4 w-4" />
-                CSV
-              </Button>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={handleExportPDF} className="flex-1 sm:flex-none">
+                  <FileDown className="mr-2 h-4 w-4" />
+                  PDF
+                </Button>
+                <Button variant="outline" onClick={handleExportExcel} className="flex-1 sm:flex-none">
+                  <FileDown className="mr-2 h-4 w-4" />
+                  Excel
+                </Button>
+                <Button variant="outline" onClick={handleExportCSV} className="flex-1 sm:flex-none">
+                  <Download className="mr-2 h-4 w-4" />
+                  CSV
+                </Button>
+              </div>
             </div>
           </div>
 

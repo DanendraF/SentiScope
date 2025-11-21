@@ -327,8 +327,8 @@ class ApiClient {
     return this.post('/analysis/keywords', { keywords, saveToDatabase, title });
   }
 
-  async deepAnalysis(text?: string, texts?: string[], saveToDatabase?: boolean, title?: string) {
-    return this.post('/analysis/deep', { text, texts, saveToDatabase, title });
+  async deepAnalysis(text?: string, texts?: string[], saveToDatabase?: boolean, title?: string, keywords?: string[]) {
+    return this.post('/analysis/deep', { text, texts, saveToDatabase, title, keywords });
   }
 
   async analyzeCsv(file: File, saveToDatabase?: boolean, title?: string, textColumn?: string, useAI?: boolean) {

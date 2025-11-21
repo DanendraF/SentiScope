@@ -175,7 +175,7 @@ export const deepSentimentAnalysis = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { text, texts, saveToDatabase = false, title } = req.body;
+    const { text, texts, saveToDatabase = false, title, keywords } = req.body;
 
     if (!openaiService.isAvailable()) {
       throw new AppError('AI service is not available. Please configure OPENAI_API_KEY', 503);
@@ -250,6 +250,7 @@ export const deepSentimentAnalysis = async (
         sentiment: r.sentiment.label,
         score: r.sentiment.score,
       })),
+      keywords: keywords && Array.isArray(keywords) ? keywords : (keywords ? [keywords] : undefined),
     });
 
     // Save to database if requested

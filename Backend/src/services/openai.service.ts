@@ -98,6 +98,7 @@ Return ONLY the exact column name, nothing else.`;
     neutral: number;
     averageScore: number;
     sampleTexts: { text: string; sentiment: string; score: number }[];
+    keywords?: string[]; // Optional keywords for context
   }): Promise<string> {
     if (!this.openai) {
       throw new Error('OpenAI service is not available');
@@ -110,8 +111,13 @@ Return ONLY the exact column name, nothing else.`;
       const negativeRate = ((results.negative / results.total) * 100).toFixed(1);
       const neutralRate = ((results.neutral / results.total) * 100).toFixed(1);
 
-      const prompt = `You are a professional sentiment analysis consultant providing insights for business decision-making.
+      // Add keyword context if provided
+      const keywordContext = results.keywords && results.keywords.length > 0
+        ? `\n🔍 ANALYZED KEYWORDS: ${results.keywords.join(', ')}\nNote: Focus analysis specifically on these keywords/topics. All sample texts below are related to these keywords.\n`
+        : '';
 
+      const prompt = `You are a professional sentiment analysis consultant providing insights for business decision-making.
+${keywordContext}
 ANALYSIS DATA:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📊 Total Analyzed: ${results.total} items
@@ -123,16 +129,18 @@ ANALYSIS DATA:
 SAMPLE FEEDBACK:
 ${results.sampleTexts
   .slice(0, 8)
-  .map((item, i) => `${i + 1}. [${item.sentiment.toUpperCase()}] "${item.text.substring(0, 120)}"`)
+  .map((item, i) => `${i + 1}. [${item.sentiment.toUpperCase()}] "${item.text.substring(0, 150)}"`)
   .join('\n')}
 
 TASK:
 Provide a comprehensive analysis structured as follows:
 
-1. OVERALL SENTIMENT: One clear sentence about the dominant sentiment and what it means
-2. KEY FINDINGS: 2-3 specific observations from the data (mention percentages, patterns, or trends)
-3. ACTIONABLE RECOMMENDATIONS: 2-3 concrete, specific actions to improve sentiment or maintain positive trends
+1. OVERALL SENTIMENT: One clear sentence about the dominant sentiment${results.keywords?.length ? ` specifically for ${results.keywords.join(', ')}` : ''} and what it means
+2. KEY FINDINGS: 2-3 specific observations from the data (mention percentages, patterns, or trends). ${results.keywords?.length ? `Focus on what people are saying about ${results.keywords.join(', ')}.` : 'Focus on the actual content in the sample feedback above.'}
+3. ACTIONABLE RECOMMENDATIONS: 2-3 concrete, specific actions to improve sentiment or maintain positive trends${results.keywords?.length ? ` related to ${results.keywords.join(', ')}` : ''}
 4. PRIORITY AREAS: What should be addressed first based on the negative/neutral feedback
+
+IMPORTANT: Base your analysis ONLY on the sample feedback provided above. Do not make assumptions about unrelated topics or keywords not present in the samples. Stay focused on what customers are actually saying in these specific texts.
 
 Make it professional, data-driven, and immediately actionable for business stakeholders. Use clear formatting with bullet points or numbered lists where appropriate.`;
 
@@ -142,7 +150,7 @@ Make it professional, data-driven, and immediately actionable for business stake
           {
             role: 'system',
             content:
-              'You are an expert business analyst specializing in sentiment analysis and customer experience insights. Provide clear, actionable, and professional insights that help businesses make data-driven decisions. Use structured formatting and be specific with recommendations.',
+              'You are an expert business analyst specializing in sentiment analysis and customer experience insights. Provide clear, actionable, and professional insights that help businesses make data-driven decisions. Use structured formatting and be specific with recommendations. CRITICAL: Base your analysis ONLY on the actual sample texts provided - do not introduce topics or keywords not present in the samples. Stay laser-focused on what customers are actually saying.',
           },
           {
             role: 'user',
