@@ -26,6 +26,10 @@ interface ExportData {
   results: AnalysisResult[];
   statistics: AnalysisStatistics;
   aiInsights?: string;
+  chartImages?: {
+    pieChart?: string;
+    barChart?: string;
+  };
 }
 
 /**
@@ -73,8 +77,63 @@ export async function exportToPDF(data: ExportData) {
 
   yPosition = (doc as any).lastAutoTable.finalY + 15;
 
+  // Charts Section
+  if (data.chartImages?.pieChart || data.chartImages?.barChart) {
+    // Check if we need a new page
+    if (yPosition > 200) {
+      doc.addPage();
+      yPosition = 20;
+    }
+
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Visualizations', 14, yPosition);
+    yPosition += 10;
+
+    // Add Pie Chart
+    if (data.chartImages.pieChart) {
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Sentiment Distribution', 14, yPosition);
+      yPosition += 5;
+
+      const imgWidth = 80;
+      const imgHeight = 80;
+      const xPosition = (pageWidth - imgWidth) / 2;
+
+      doc.addImage(data.chartImages.pieChart, 'PNG', xPosition, yPosition, imgWidth, imgHeight);
+      yPosition += imgHeight + 15;
+    }
+
+    // Add Bar Chart
+    if (data.chartImages.barChart) {
+      // Check if we need a new page for bar chart
+      if (yPosition > 180) {
+        doc.addPage();
+        yPosition = 20;
+      }
+
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Top Keywords', 14, yPosition);
+      yPosition += 5;
+
+      const imgWidth = pageWidth - 28;
+      const imgHeight = 60;
+
+      doc.addImage(data.chartImages.barChart, 'PNG', 14, yPosition, imgWidth, imgHeight);
+      yPosition += imgHeight + 15;
+    }
+  }
+
   // AI Insights Section
   if (data.aiInsights) {
+    // Check if we need a new page
+    if (yPosition > 200) {
+      doc.addPage();
+      yPosition = 20;
+    }
+
     doc.setFontSize(14);
     doc.setFont('helvetica', 'bold');
     doc.text('AI Insights', 14, yPosition);

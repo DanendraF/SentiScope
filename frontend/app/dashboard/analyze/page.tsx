@@ -15,6 +15,7 @@ import { KeywordBarChart } from '@/components/charts/keyword-bar-chart';
 import { LikertScaleChart } from '@/components/charts/likert-scale-chart';
 import { WordFrequencyChart } from '@/components/charts/word-frequency-chart';
 import { exportToPDF, exportToExcel, exportToCSV } from '@/lib/export-utils';
+import html2canvas from 'html2canvas';
 import {
   Table,
   TableBody,
@@ -361,12 +362,36 @@ export default function AnalyzePage() {
     if (!statistics || results.length === 0) return;
 
     try {
+      // Capture charts as images
+      const chartImages: { pieChart?: string; barChart?: string } = {};
+
+      // Capture Pie Chart
+      const pieChartElement = document.querySelector('[data-chart="sentiment-pie"]');
+      if (pieChartElement) {
+        const canvas = await html2canvas(pieChartElement as HTMLElement, {
+          backgroundColor: '#ffffff',
+          scale: 2,
+        });
+        chartImages.pieChart = canvas.toDataURL('image/png');
+      }
+
+      // Capture Bar Chart
+      const barChartElement = document.querySelector('[data-chart="keyword-bar"]');
+      if (barChartElement) {
+        const canvas = await html2canvas(barChartElement as HTMLElement, {
+          backgroundColor: '#ffffff',
+          scale: 2,
+        });
+        chartImages.barChart = canvas.toDataURL('image/png');
+      }
+
       await exportToPDF({
         title: 'Sentiment Analysis Report',
         date: new Date().toLocaleDateString(),
         results: results,
         statistics: statistics,
         aiInsights: aiInsights || undefined,
+        chartImages,
       });
 
       toast({
@@ -803,7 +828,7 @@ export default function AnalyzePage() {
                 <CardTitle>Sentiment Distribution</CardTitle>
                 <CardDescription>Overall sentiment breakdown</CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent data-chart="sentiment-pie">
                 <SentimentPieChart
                   positive={statistics.positive}
                   negative={statistics.negative}
@@ -830,7 +855,7 @@ export default function AnalyzePage() {
                 <CardTitle>Keyword Analysis</CardTitle>
                 <CardDescription>Sentiment by key topics</CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent data-chart="keyword-bar">
                 <KeywordBarChart results={results} />
               </CardContent>
             </Card>

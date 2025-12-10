@@ -37,6 +37,9 @@ export default function LoginPage() {
         const searchParams = new URLSearchParams(window.location.search);
         const redirect = searchParams.get('redirect');
 
+        // Refresh to update auth state
+        router.refresh();
+
         // Redirect to original destination or dashboard
         router.push(redirect || '/dashboard');
       }
