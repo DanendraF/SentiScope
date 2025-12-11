@@ -273,13 +273,13 @@ export default function AnalysisDetailPage() {
           </CardHeader>
           <CardContent>
             <SentimentTrendChart
-              results={analysis.items.map(item => ({
+              results={analysis.items?.map(item => ({
                 text: item.textContent,
                 sentiment: {
                   label: item.sentimentLabel.toLowerCase(),
                   score: item.confidenceScore
                 }
-              }))}
+              })) || []}
             />
           </CardContent>
         </Card>
