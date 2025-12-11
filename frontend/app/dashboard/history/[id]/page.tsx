@@ -61,12 +61,6 @@ export default function AnalysisDetailPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
-  useEffect(() => {
-    if (params.id) {
-      fetchAnalysisDetail(params.id as string);
-    }
-  }, [params.id]);
-
   const fetchAnalysisDetail = async (id: string) => {
     try {
       setIsLoading(true);
@@ -91,6 +85,13 @@ export default function AnalysisDetailPage() {
     }
   };
 
+  useEffect(() => {
+    if (params.id) {
+      fetchAnalysisDetail(params.id as string);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.id]);
+
   const getSentimentIcon = (sentiment: string) => {
     switch (sentiment.toLowerCase()) {
       case 'positive':
@@ -114,7 +115,10 @@ export default function AnalysisDetailPage() {
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString('en-US', {
+    if (!dateString) return 'N/A';
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return 'Invalid Date';
+    return date.toLocaleString('en-US', {
       year: 'numeric',
       month: 'long',
       day: 'numeric',
@@ -124,6 +128,7 @@ export default function AnalysisDetailPage() {
   };
 
   const getPercentage = (count: number, total: number) => {
+    if (!count || !total || total === 0) return '0.0';
     return ((count / total) * 100).toFixed(1);
   };
 
@@ -193,7 +198,7 @@ export default function AnalysisDetailPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">{analysis.totalItems}</p>
+            <p className="text-2xl font-bold">{analysis.totalItems || 0}</p>
           </CardContent>
         </Card>
 
@@ -205,10 +210,10 @@ export default function AnalysisDetailPage() {
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold text-green-600 dark:text-green-400">
-              {analysis.positiveCount}
+              {analysis.positiveCount || 0}
             </p>
             <p className="text-xs text-muted-foreground mt-1">
-              {getPercentage(analysis.positiveCount, analysis.totalItems)}%
+              {getPercentage(analysis.positiveCount || 0, analysis.totalItems || 0)}%
             </p>
           </CardContent>
         </Card>
@@ -221,10 +226,10 @@ export default function AnalysisDetailPage() {
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold text-red-600 dark:text-red-400">
-              {analysis.negativeCount}
+              {analysis.negativeCount || 0}
             </p>
             <p className="text-xs text-muted-foreground mt-1">
-              {getPercentage(analysis.negativeCount, analysis.totalItems)}%
+              {getPercentage(analysis.negativeCount || 0, analysis.totalItems || 0)}%
             </p>
           </CardContent>
         </Card>
@@ -237,10 +242,10 @@ export default function AnalysisDetailPage() {
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold text-gray-600 dark:text-gray-400">
-              {analysis.neutralCount}
+              {analysis.neutralCount || 0}
             </p>
             <p className="text-xs text-muted-foreground mt-1">
-              {getPercentage(analysis.neutralCount, analysis.totalItems)}%
+              {getPercentage(analysis.neutralCount || 0, analysis.totalItems || 0)}%
             </p>
           </CardContent>
         </Card>
@@ -257,9 +262,9 @@ export default function AnalysisDetailPage() {
           </CardHeader>
           <CardContent>
             <SentimentPieChart
-              positive={analysis.positiveCount}
-              negative={analysis.negativeCount}
-              neutral={analysis.neutralCount}
+              positive={analysis.positiveCount || 0}
+              negative={analysis.negativeCount || 0}
+              neutral={analysis.neutralCount || 0}
             />
           </CardContent>
         </Card>
@@ -295,7 +300,7 @@ export default function AnalysisDetailPage() {
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
-            {analysis.items
+            {(analysis.items || [])
               .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
               .map((item, index) => {
                 const globalIndex = (currentPage - 1) * itemsPerPage + index;
@@ -329,17 +334,17 @@ export default function AnalysisDetailPage() {
               })}
           </div>
 
-          {analysis.items.length === 0 && (
+          {(analysis.items || []).length === 0 && (
             <div className="text-center py-12">
               <p className="text-muted-foreground">No analysis items found</p>
             </div>
           )}
 
           {/* Pagination Controls */}
-          {analysis.items.length > itemsPerPage && (
+          {(analysis.items || []).length > itemsPerPage && (
             <div className="flex items-center justify-between mt-6 pt-4 border-t">
               <div className="text-sm text-muted-foreground">
-                Page {currentPage} of {Math.ceil(analysis.items.length / itemsPerPage)}
+                Page {currentPage} of {Math.ceil((analysis.items || []).length / itemsPerPage)}
               </div>
               <div className="flex gap-2">
                 <Button
@@ -354,8 +359,8 @@ export default function AnalysisDetailPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setCurrentPage(prev => Math.min(Math.ceil(analysis.items.length / itemsPerPage), prev + 1))}
-                  disabled={currentPage === Math.ceil(analysis.items.length / itemsPerPage)}
+                  onClick={() => setCurrentPage(prev => Math.min(Math.ceil((analysis.items || []).length / itemsPerPage), prev + 1))}
+                  disabled={currentPage === Math.ceil((analysis.items || []).length / itemsPerPage)}
                 >
                   Next
                   <ChevronRight className="h-4 w-4 ml-1" />
@@ -398,7 +403,7 @@ export default function AnalysisDetailPage() {
 
       {/* Chatbot */}
       <AnalysisChatbot
-        results={analysis.items.map(item => ({
+        results={(analysis.items || []).map(item => ({
           text: item.textContent,
           sentiment: {
             label: item.sentimentLabel,

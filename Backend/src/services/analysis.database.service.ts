@@ -84,6 +84,7 @@ class AnalysisDatabaseService {
       }
 
       const analysis = this.mapAnalysisRow(analysisData);
+      console.log('📝 Analysis saved with ID:', analysis.id);
 
       // Insert analysis items
       const itemsToInsert = results.map(result => ({
@@ -93,18 +94,21 @@ class AnalysisDatabaseService {
         confidence_score: result.sentiment.score,
       }));
 
+      console.log(`📊 Inserting ${itemsToInsert.length} analysis items...`, itemsToInsert[0]);
+
       const { data: itemsData, error: itemsError } = await supabase
         .from('analysis_items')
         .insert(itemsToInsert)
         .select();
 
       if (itemsError) {
-        console.error('Failed to save analysis items:', itemsError);
+        console.error('❌ Failed to save analysis items:', itemsError);
         // Rollback: delete the analysis
         await supabase.from('analyses').delete().eq('id', analysis.id);
         throw new AppError('Failed to save analysis items to database', 500);
       }
 
+      console.log(`✅ Saved ${itemsData?.length || 0} analysis items`);
       const items = itemsData.map(row => this.mapAnalysisItemRow(row));
 
       return {

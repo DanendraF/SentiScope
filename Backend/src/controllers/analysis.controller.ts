@@ -256,6 +256,7 @@ export const deepSentimentAnalysis = async (
     // Save to database if requested
     let savedAnalysis = null;
     if (saveToDatabase && req.user) {
+      console.log('💾 Saving analysis to database...', { saveToDatabase, userId: req.user.userId, title });
       const analysisTitle = title || `Deep AI Analysis - ${new Date().toLocaleDateString()}`;
 
       // Convert to format expected by saveAnalysis
@@ -263,6 +264,8 @@ export const deepSentimentAnalysis = async (
         text: r.text,
         sentiment: r.sentiment,
       }));
+
+      console.log(`📋 Formatted ${formattedResults.length} results for saving:`, formattedResults[0]);
 
       savedAnalysis = await analysisDatabaseService.saveAnalysis(
         req.user.userId,
@@ -274,6 +277,9 @@ export const deepSentimentAnalysis = async (
         undefined, // originalFileName
         insights // aiInsights
       );
+      console.log('✅ Analysis saved successfully:', savedAnalysis.id);
+    } else {
+      console.log('⚠️ Analysis NOT saved:', { saveToDatabase, hasUser: !!req.user });
     }
 
     res.status(200).json({
@@ -284,6 +290,66 @@ export const deepSentimentAnalysis = async (
         statistics,
         insights,
         ...(savedAnalysis && { analysis: savedAnalysis }),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Save batch analysis results
+ * POST /api/analysis/save-batch
+ */
+export const saveBatchAnalysis = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      throw new AppError('Unauthorized', 401);
+    }
+
+    const { title, results, statistics, aiInsights } = req.body;
+
+    if (!results || !Array.isArray(results) || results.length === 0) {
+      throw new AppError('Results array is required', 400);
+    }
+
+    console.log(`💾 Saving batch analysis with ${results.length} items...`);
+
+    const analysisTitle = title || `Batch Analysis - ${new Date().toLocaleDateString()}`;
+
+    // Format results for database
+    const formattedResults = results.map((r: any) => ({
+      text: r.text,
+      sentiment: {
+        label: r.sentiment.label,
+        score: r.sentiment.score,
+      },
+    }));
+
+    const savedAnalysis = await analysisDatabaseService.saveAnalysis(
+      userId,
+      analysisTitle,
+      'batch',
+      formattedResults,
+      undefined,
+      undefined,
+      undefined,
+      aiInsights
+    );
+
+    console.log('✅ Batch analysis saved:', savedAnalysis.id);
+
+    res.status(200).json({
+      success: true,
+      message: `Saved analysis with ${results.length} items`,
+      data: {
+        analysisId: savedAnalysis.id,
+        analysis: savedAnalysis,
       },
     });
   } catch (error) {
@@ -391,9 +457,7 @@ export const getAnalysisById = async (
     res.status(200).json({
       success: true,
       message: 'Analysis retrieved successfully',
-      data: {
-        analysis,
-      },
+      data: analysis,
     });
   } catch (error) {
     next(error);

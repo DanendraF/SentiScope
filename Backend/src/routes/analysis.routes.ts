@@ -7,6 +7,7 @@ import {
   analyzeCsvFile,
   analyzeImageFile,
   deepSentimentAnalysis,
+  saveBatchAnalysis,
   getStatistics,
   getAnalysisHistory,
   getAnalysisById,
@@ -123,6 +124,13 @@ router.post(
   '/deep',
   authenticateToken,
   deepSentimentAnalysis
+);
+
+// POST /api/analysis/save-batch - Save batch analysis results
+router.post(
+  '/save-batch',
+  authenticateToken,
+  saveBatchAnalysis
 );
 
 // POST /api/analysis/statistics - Get statistics from results

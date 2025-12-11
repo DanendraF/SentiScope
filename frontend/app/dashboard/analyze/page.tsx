@@ -144,7 +144,7 @@ export default function AnalyzePage() {
           const response = await apiClient.deepAnalysis(
             textsToAnalyze.length === 1 ? textsToAnalyze[0] : undefined,
             textsToAnalyze.length > 1 ? textsToAnalyze : undefined,
-            true,
+            false, // Don't save here, will save combined results later
             analysisTitle,
             keywords.slice(0, 5) // Pass top 5 keywords for context
           );
@@ -219,6 +219,28 @@ export default function AnalyzePage() {
         setStatistics(combinedStats);
         setAiInsights(insights);
         setShowResults(true);
+
+        // Save combined analysis to database
+        try {
+          const saveTitle = inputType === 'comment'
+            ? `Comment Analysis - ${textInput.substring(0, 30)}`
+            : `Product Analysis - ${textInput.substring(0, 30)}`;
+
+          const saveResponse = await apiClient.post('/analysis/save-batch', {
+            title: saveTitle,
+            results: allResults.slice(0, 200), // Limit to 200 items for database
+            statistics: combinedStats,
+            aiInsights: insights,
+          });
+
+          if (saveResponse.data?.success && saveResponse.data?.data?.analysisId) {
+            setAnalysisId(saveResponse.data.data.analysisId);
+            console.log('✅ Combined analysis saved:', saveResponse.data.data.analysisId);
+          }
+        } catch (saveError) {
+          console.error('⚠️ Failed to save analysis:', saveError);
+          // Don't show error to user, analysis still works
+        }
 
         const successMsg = inputType === 'comment'
           ? `Analyzed ${allResults.length} text(s)${insights ? ' with AI insights' : ''}`
