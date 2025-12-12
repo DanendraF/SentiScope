@@ -23,6 +23,8 @@ import { useToast } from '@/hooks/use-toast';
 import { SentimentPieChart } from '@/components/charts/sentiment-pie-chart';
 import { SentimentTrendChart } from '@/components/charts/sentiment-trend-chart';
 import { AnalysisChatbot } from '@/components/chatbot/analysis-chatbot';
+import { exportToPDF } from '@/lib/export-utils';
+import html2canvas from 'html2canvas';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -132,6 +134,128 @@ export default function AnalysisDetailPage() {
     return ((count / total) * 100).toFixed(1);
   };
 
+  const handleExportPDF = async () => {
+    if (!analysis || !analysis.items || analysis.items.length === 0) {
+      toast({
+        title: 'No data to export',
+        description: 'There are no analysis results to export',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      toast({
+        title: 'Generating PDF',
+        description: 'Please wait while we prepare your document...',
+      });
+
+      // Wait for charts to fully render
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Capture charts as images with better settings
+      const chartImages: { pieChart?: string; barChart?: string } = {};
+
+      // Capture Pie Chart - find the actual SVG element
+      const pieChartContainer = document.querySelector('[data-chart="sentiment-pie"]');
+      if (pieChartContainer) {
+        // Scroll into view to ensure it's rendered
+        pieChartContainer.scrollIntoView({ behavior: 'instant', block: 'center' });
+        await new Promise(resolve => setTimeout(resolve, 300));
+
+        const canvas = await html2canvas(pieChartContainer as HTMLElement, {
+          backgroundColor: '#ffffff',
+          scale: 2,
+          logging: false,
+          useCORS: true,
+          allowTaint: true,
+          removeContainer: false,
+          imageTimeout: 0,
+          onclone: (clonedDoc) => {
+            const clonedElement = clonedDoc.querySelector('[data-chart="sentiment-pie"]');
+            if (clonedElement) {
+              (clonedElement as HTMLElement).style.minHeight = '300px';
+              (clonedElement as HTMLElement).style.minWidth = '400px';
+            }
+          }
+        });
+        chartImages.pieChart = canvas.toDataURL('image/png', 1.0);
+      }
+
+      // Capture Trend Chart
+      const trendChartContainer = document.querySelector('[data-chart="sentiment-trend"]');
+      if (trendChartContainer) {
+        // Scroll into view to ensure it's rendered
+        trendChartContainer.scrollIntoView({ behavior: 'instant', block: 'center' });
+        await new Promise(resolve => setTimeout(resolve, 300));
+
+        const canvas = await html2canvas(trendChartContainer as HTMLElement, {
+          backgroundColor: '#ffffff',
+          scale: 2,
+          logging: false,
+          useCORS: true,
+          allowTaint: true,
+          removeContainer: false,
+          imageTimeout: 0,
+          onclone: (clonedDoc) => {
+            const clonedElement = clonedDoc.querySelector('[data-chart="sentiment-trend"]');
+            if (clonedElement) {
+              (clonedElement as HTMLElement).style.minHeight = '300px';
+              (clonedElement as HTMLElement).style.minWidth = '600px';
+            }
+          }
+        });
+        chartImages.barChart = canvas.toDataURL('image/png', 1.0);
+      }
+
+      // Scroll back to top
+      window.scrollTo({ top: 0, behavior: 'instant' });
+
+      // Convert items to the format expected by exportToPDF
+      const results = analysis.items.map(item => ({
+        text: item.textContent,
+        sentiment: {
+          label: item.sentimentLabel.toLowerCase(),
+          score: item.confidenceScore,
+        },
+        keywords: [],
+        productName: undefined,
+      }));
+
+      const statistics = {
+        total: analysis.totalItems,
+        positive: analysis.positiveCount,
+        negative: analysis.negativeCount,
+        neutral: analysis.neutralCount,
+        positivePercentage: (analysis.positiveCount / analysis.totalItems) * 100,
+        negativePercentage: (analysis.negativeCount / analysis.totalItems) * 100,
+        neutralPercentage: (analysis.neutralCount / analysis.totalItems) * 100,
+        averageScore: analysis.averageScore,
+      };
+
+      await exportToPDF({
+        title: analysis.title,
+        date: formatDate(analysis.createdAt),
+        results,
+        statistics,
+        aiInsights: analysis.aiInsights || undefined,
+        chartImages,
+      });
+
+      toast({
+        title: 'PDF exported successfully',
+        description: 'Your analysis report has been downloaded',
+      });
+    } catch (error) {
+      console.error('Failed to export PDF:', error);
+      toast({
+        title: 'Export failed',
+        description: 'Failed to generate PDF. Please try again.',
+        variant: 'destructive',
+      });
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="p-6">
@@ -164,7 +288,7 @@ export default function AnalysisDetailPage() {
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div className="flex items-center gap-4">
           <Button
             variant="ghost"
@@ -187,6 +311,14 @@ export default function AnalysisDetailPage() {
             </p>
           </div>
         </div>
+        <Button
+          onClick={handleExportPDF}
+          disabled={!analysis.items || analysis.items.length === 0}
+          className="w-full sm:w-auto"
+        >
+          <Download className="h-4 w-4 mr-2" />
+          Export PDF
+        </Button>
       </div>
 
       {/* Statistics Cards */}
@@ -261,11 +393,13 @@ export default function AnalysisDetailPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <SentimentPieChart
-              positive={analysis.positiveCount || 0}
-              negative={analysis.negativeCount || 0}
-              neutral={analysis.neutralCount || 0}
-            />
+            <div data-chart="sentiment-pie">
+              <SentimentPieChart
+                positive={analysis.positiveCount || 0}
+                negative={analysis.negativeCount || 0}
+                neutral={analysis.neutralCount || 0}
+              />
+            </div>
           </CardContent>
         </Card>
 
@@ -277,15 +411,17 @@ export default function AnalysisDetailPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <SentimentTrendChart
-              results={analysis.items?.map(item => ({
-                text: item.textContent,
-                sentiment: {
-                  label: item.sentimentLabel.toLowerCase(),
-                  score: item.confidenceScore
-                }
-              })) || []}
-            />
+            <div data-chart="sentiment-trend">
+              <SentimentTrendChart
+                results={analysis.items?.map(item => ({
+                  text: item.textContent,
+                  sentiment: {
+                    label: item.sentimentLabel.toLowerCase(),
+                    score: item.confidenceScore
+                  }
+                })) || []}
+              />
+            </div>
           </CardContent>
         </Card>
       </div>

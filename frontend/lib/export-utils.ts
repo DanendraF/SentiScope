@@ -38,25 +38,44 @@ interface ExportData {
 export async function exportToPDF(data: ExportData) {
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.getWidth();
-  let yPosition = 20;
+  const pageHeight = doc.internal.pageSize.getHeight();
+  let yPosition = 25;
+
+  // Header with background
+  doc.setFillColor(59, 130, 246);
+  doc.rect(0, 0, pageWidth, 45, 'F');
 
   // Title
-  doc.setFontSize(20);
+  doc.setFontSize(22);
   doc.setFont('helvetica', 'bold');
+  doc.setTextColor(255, 255, 255);
   doc.text(data.title, pageWidth / 2, yPosition, { align: 'center' });
   yPosition += 10;
 
   // Date
   doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');
+  doc.setTextColor(240, 240, 240);
   doc.text(`Generated: ${data.date}`, pageWidth / 2, yPosition, { align: 'center' });
-  yPosition += 15;
 
-  // Statistics Section
-  doc.setFontSize(14);
+  // Reset text color
+  doc.setTextColor(0, 0, 0);
+  yPosition = 60;
+
+  // Statistics Section with better formatting
+  doc.setFontSize(16);
   doc.setFont('helvetica', 'bold');
+  doc.setTextColor(59, 130, 246);
   doc.text('Summary Statistics', 14, yPosition);
-  yPosition += 10;
+  yPosition += 8;
+
+  // Draw separator line
+  doc.setDrawColor(200, 200, 200);
+  doc.setLineWidth(0.5);
+  doc.line(14, yPosition, pageWidth - 14, yPosition);
+  yPosition += 5;
+
+  doc.setTextColor(0, 0, 0);
 
   const statsData = [
     ['Total Analyzed', data.statistics.total.toString()],
@@ -70,8 +89,23 @@ export async function exportToPDF(data: ExportData) {
     startY: yPosition,
     head: [['Metric', 'Value']],
     body: statsData,
-    theme: 'grid',
-    headStyles: { fillColor: [59, 130, 246] },
+    theme: 'striped',
+    headStyles: {
+      fillColor: [59, 130, 246],
+      fontSize: 11,
+      fontStyle: 'bold',
+      halign: 'left'
+    },
+    bodyStyles: {
+      fontSize: 10,
+    },
+    alternateRowStyles: {
+      fillColor: [245, 247, 250]
+    },
+    columnStyles: {
+      0: { fontStyle: 'bold', cellWidth: 60 },
+      1: { halign: 'right', cellWidth: 'auto' }
+    },
     margin: { left: 14, right: 14 },
   });
 
@@ -80,49 +114,81 @@ export async function exportToPDF(data: ExportData) {
   // Charts Section
   if (data.chartImages?.pieChart || data.chartImages?.barChart) {
     // Check if we need a new page
-    if (yPosition > 200) {
+    if (yPosition > 180) {
       doc.addPage();
       yPosition = 20;
     }
 
-    doc.setFontSize(14);
+    doc.setFontSize(16);
     doc.setFont('helvetica', 'bold');
+    doc.setTextColor(59, 130, 246);
     doc.text('Visualizations', 14, yPosition);
+    yPosition += 8;
+
+    // Draw separator line
+    doc.setDrawColor(200, 200, 200);
+    doc.setLineWidth(0.5);
+    doc.line(14, yPosition, pageWidth - 14, yPosition);
     yPosition += 10;
+
+    doc.setTextColor(0, 0, 0);
 
     // Add Pie Chart
     if (data.chartImages.pieChart) {
-      doc.setFontSize(11);
+      doc.setFontSize(12);
       doc.setFont('helvetica', 'bold');
       doc.text('Sentiment Distribution', 14, yPosition);
-      yPosition += 5;
+      yPosition += 8;
 
-      const imgWidth = 80;
-      const imgHeight = 80;
+      const imgWidth = 120;
+      const imgHeight = 120;
       const xPosition = (pageWidth - imgWidth) / 2;
 
+      // Add border around chart
+      doc.setDrawColor(220, 220, 220);
+      doc.setLineWidth(0.5);
+      doc.rect(xPosition - 2, yPosition - 2, imgWidth + 4, imgHeight + 4);
+
       doc.addImage(data.chartImages.pieChart, 'PNG', xPosition, yPosition, imgWidth, imgHeight);
-      yPosition += imgHeight + 15;
+      yPosition += imgHeight + 20;
     }
 
     // Add Bar Chart
     if (data.chartImages.barChart) {
       // Check if we need a new page for bar chart
-      if (yPosition > 180) {
+      if (yPosition > 150) {
         doc.addPage();
         yPosition = 20;
+
+        doc.setFontSize(16);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(59, 130, 246);
+        doc.text('Visualizations (continued)', 14, yPosition);
+        yPosition += 8;
+
+        doc.setDrawColor(200, 200, 200);
+        doc.setLineWidth(0.5);
+        doc.line(14, yPosition, pageWidth - 14, yPosition);
+        yPosition += 10;
+
+        doc.setTextColor(0, 0, 0);
       }
 
-      doc.setFontSize(11);
+      doc.setFontSize(12);
       doc.setFont('helvetica', 'bold');
-      doc.text('Top Keywords', 14, yPosition);
-      yPosition += 5;
+      doc.text('Sentiment Trend Over Time', 14, yPosition);
+      yPosition += 8;
 
       const imgWidth = pageWidth - 28;
-      const imgHeight = 60;
+      const imgHeight = 100;
+
+      // Add border around chart
+      doc.setDrawColor(220, 220, 220);
+      doc.setLineWidth(0.5);
+      doc.rect(14 - 2, yPosition - 2, imgWidth + 4, imgHeight + 4);
 
       doc.addImage(data.chartImages.barChart, 'PNG', 14, yPosition, imgWidth, imgHeight);
-      yPosition += imgHeight + 15;
+      yPosition += imgHeight + 20;
     }
   }
 
@@ -134,16 +200,61 @@ export async function exportToPDF(data: ExportData) {
       yPosition = 20;
     }
 
-    doc.setFontSize(14);
+    doc.setFontSize(16);
     doc.setFont('helvetica', 'bold');
+    doc.setTextColor(59, 130, 246);
     doc.text('AI Insights', 14, yPosition);
     yPosition += 8;
 
-    doc.setFontSize(10);
+    // Draw separator line
+    doc.setDrawColor(200, 200, 200);
+    doc.setLineWidth(0.5);
+    doc.line(14, yPosition, pageWidth - 14, yPosition);
+    yPosition += 10;
+
+    // Format AI Insights with better parsing
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(9);
     doc.setFont('helvetica', 'normal');
-    const insights = doc.splitTextToSize(data.aiInsights, pageWidth - 28);
-    doc.text(insights, 14, yPosition);
-    yPosition += insights.length * 5 + 10;
+
+    // Split insights into sections and format
+    const insightLines = data.aiInsights.split('\n');
+    let currentY = yPosition;
+
+    insightLines.forEach((line) => {
+      // Check for new page
+      if (currentY > pageHeight - 20) {
+        doc.addPage();
+        currentY = 20;
+      }
+
+      const trimmedLine = line.trim();
+
+      // Format headers (lines starting with ### or **)
+      if (trimmedLine.startsWith('###') || trimmedLine.startsWith('##')) {
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(11);
+        const text = trimmedLine.replace(/#+\s*/, '').replace(/\*\*/g, '');
+        doc.text(text, 14, currentY);
+        currentY += 7;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
+      } else if (trimmedLine.startsWith('-') || trimmedLine.startsWith('*')) {
+        // Bullet points
+        const text = doc.splitTextToSize(trimmedLine.replace(/^[-*]\s*/, '• '), pageWidth - 32);
+        doc.text(text, 18, currentY);
+        currentY += text.length * 5;
+      } else if (trimmedLine.length > 0) {
+        // Regular text
+        const text = doc.splitTextToSize(trimmedLine, pageWidth - 28);
+        doc.text(text, 14, currentY);
+        currentY += text.length * 5;
+      } else {
+        currentY += 4;
+      }
+    });
+
+    yPosition = currentY + 10;
   }
 
   // Add new page for detailed results
@@ -151,44 +262,100 @@ export async function exportToPDF(data: ExportData) {
   yPosition = 20;
 
   // Detailed Results Section
-  doc.setFontSize(14);
+  doc.setFontSize(16);
   doc.setFont('helvetica', 'bold');
+  doc.setTextColor(59, 130, 246);
   doc.text('Detailed Analysis Results', 14, yPosition);
-  yPosition += 10;
+  yPosition += 8;
+
+  // Draw separator line
+  doc.setDrawColor(200, 200, 200);
+  doc.setLineWidth(0.5);
+  doc.line(14, yPosition, pageWidth - 14, yPosition);
+  yPosition += 5;
+
+  doc.setTextColor(0, 0, 0);
 
   const resultsData = data.results.slice(0, 100).map((result, index) => {
     const sentiment = result.sentiment.label.charAt(0).toUpperCase() + result.sentiment.label.slice(1);
-    const score = result.sentiment.score.toFixed(3);
-    const text = result.text.length > 80 ? result.text.substring(0, 77) + '...' : result.text;
+    const score = (result.sentiment.score * 100).toFixed(1) + '%';
+    const text = result.text.length > 100 ? result.text.substring(0, 97) + '...' : result.text;
 
     return [
       (index + 1).toString(),
       text,
       sentiment,
-      score,
-      result.keyPhrases?.slice(0, 2).join(', ') || '-'
+      score
     ];
   });
 
   autoTable(doc, {
     startY: yPosition,
-    head: [['#', 'Text', 'Sentiment', 'Score', 'Key Phrases']],
+    head: [['#', 'Text', 'Sentiment', 'Confidence']],
     body: resultsData,
     theme: 'striped',
-    headStyles: { fillColor: [59, 130, 246] },
+    headStyles: {
+      fillColor: [59, 130, 246],
+      fontSize: 10,
+      fontStyle: 'bold',
+      halign: 'center'
+    },
+    bodyStyles: {
+      fontSize: 9,
+      cellPadding: 4
+    },
+    alternateRowStyles: {
+      fillColor: [248, 250, 252]
+    },
     columnStyles: {
-      0: { cellWidth: 10 },
-      1: { cellWidth: 80 },
-      2: { cellWidth: 25 },
-      3: { cellWidth: 20 },
-      4: { cellWidth: 50 },
+      0: { cellWidth: 12, halign: 'center', fontStyle: 'bold' },
+      1: { cellWidth: 120, halign: 'left' },
+      2: {
+        cellWidth: 28,
+        halign: 'center',
+        fontStyle: 'bold'
+      },
+      3: { cellWidth: 25, halign: 'center' }
+    },
+    didParseCell: (data: any) => {
+      // Color code sentiment cells
+      if (data.column.index === 2 && data.section === 'body') {
+        const sentiment = data.cell.raw;
+        if (sentiment === 'Positive') {
+          data.cell.styles.textColor = [34, 197, 94]; // green
+        } else if (sentiment === 'Negative') {
+          data.cell.styles.textColor = [239, 68, 68]; // red
+        } else {
+          data.cell.styles.textColor = [107, 114, 128]; // gray
+        }
+      }
     },
     margin: { left: 14, right: 14 },
-    styles: { fontSize: 8, cellPadding: 3 },
+    showHead: 'firstPage',
   });
 
+  // Add footer with page numbers
+  const totalPages = doc.getNumberOfPages();
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i);
+    doc.setFontSize(8);
+    doc.setTextColor(128, 128, 128);
+    doc.text(
+      `Page ${i} of ${totalPages}`,
+      pageWidth / 2,
+      pageHeight - 10,
+      { align: 'center' }
+    );
+    doc.text(
+      'SentiScope Analysis Report',
+      14,
+      pageHeight - 10
+    );
+  }
+
   // Save the PDF
-  doc.save(`${data.title.replace(/[^a-z0-9]/gi, '_')}_${Date.now()}.pdf`);
+  const fileName = `${data.title.replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
+  doc.save(fileName);
 }
 
 /**
